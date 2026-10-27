@@ -9,11 +9,11 @@ description: Use when orchestrating a sequential multi-agent task in Orca ADE ac
 
 Coordena o ciclo de desenvolvimento sequencial de uma funcionalidade dentro do **Orca ADE**, operando no mesmo workspace/branch ativo. O fluxo distribui papéis especializados entre três agentes de IA através de abas de terminal criadas via Orca CLI e skills do Superpowers:
 
-1. **Claude Code (Planner):** Elabora spec e plano detalhado com `superpowers:brainstorming` e `superpowers:writing-plans`; **pausa obrigatoriamente** para aprovação do usuário.
-2. **Codex (Executor):** Assume após a aprovação humana, executando as tarefas do plano via `superpowers:executing-plans` com TDD estrito.
-3. **AGY (Reviewer):** Audita a suíte de testes e o git diff seguindo `superpowers:requesting-code-review`; aprova ou documenta falhas em relatório de review.
+1. **Claude Code (Planner):** Elabora spec e plano detalhado com `superpowers:brainstorming` e `superpowers:writing-plans` sob `ponytail` nível `ultra`; **pausa obrigatoriamente** para aprovação do usuário.
+2. **Codex (Executor):** Assume após a aprovação humana, executando as tarefas do plano via `superpowers:executing-plans` sob `ponytail` nível `full`, com TDD estrito e menor diff.
+3. **AGY (Reviewer):** Audita a suíte de testes e o git diff seguindo `superpowers:requesting-code-review`, **sem ponytail** (quem audita não julga com o mesmo viés de economia); aprova ou documenta falhas em relatório de review.
 
-Antes de propor a cadeia, rode a Descoberta de Modelos do orca-superpowers-orchestrator (Passo 0) e inclua o modelo de cada salto na proposta enviada ao usuário.
+Antes de propor a cadeia, rode a Descoberta de Modelos do orca-superpowers-orchestrator (Passo 0) e inclua o modelo de cada salto na proposta enviada ao usuário. Confirme também o ponytail nas fases de planejamento e execução — instalação por agente, níveis, fallback e trava anti-atalho estão em "Ponytail no Planejamento e na Execução" naquela skill.
 
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
@@ -21,7 +21,7 @@ Antes de propor a cadeia, rode a Descoberta de Modelos do orca-superpowers-orche
 │                                                                        │
 │  [1. Claude Code: Planner]                                             │
 │       │  Injeta: Requisito inicial do usuário                          │
-│       │  Executa: superpowers:brainstorming + writing-plans            │
+│       │  Executa: brainstorming + writing-plans + ponytail (ultra)     │
 │       │  Produz: docs/superpowers/specs/ e plans/<data>-<feature>.md   │
 │       │          (incluindo a Task Final de chamada do AGY)            │
 │       ▼                                                                │
@@ -31,7 +31,7 @@ Antes de propor a cadeia, rode a Descoberta de Modelos do orca-superpowers-orche
 │       ▼                                                                │
 │  [2. Codex: Executor]                                                  │
 │       │  Consome: docs/superpowers/plans/<data>-<feature>.md           │
-│       │  Executa: superpowers:executing-plans (TDD e commits atômicos) │
+│       │  Executa: executing-plans + ponytail full (TDD, menor diff)    │
 │       │  Executa: Task Final do plano (chama AGY via Orca CLI)         │
 │       │  Atualiza: Checkboxes [x] no plano                             │
 │       ▼                                                                │
@@ -81,11 +81,13 @@ REQUISITO INICIAL:
 ## Protocolo Detalhado por Etapa
 
 ### Etapa 1: Claude Code (Planejador)
-* **Responsabilidade:** Transformar o requisito inicial em especificação técnica e plano de tarefas executável.
+* **Responsabilidade:** Transformar o requisito inicial em especificação técnica e plano de tarefas executável, no menor escopo que resolve o requisito inteiro.
 * **Superpowers requeridos:** `brainstorming` e `writing-plans`.
+* **Skill requerida:** `ponytail` no nível `ultra` (`/ponytail ultra`) — questiona o requisito antes de especificar. Antes de escolher a solução, percorra a ordem do ponytail: já existe no repo > biblioteca padrão/plataforma > dependência já instalada > código novo mínimo. Sem a skill instalada no CLI, aplique o princípio na mão e registre isso na spec.
 * **Entregáveis:**
-  - `docs/superpowers/specs/YYYY-MM-DD-<feature>-design.md`
+  - `docs/superpowers/specs/YYYY-MM-DD-<feature>-design.md`, encerrada com duas seções de uma linha: "Deixado de fora" e "Risco conhecido"
   - `docs/superpowers/plans/YYYY-MM-DD-<feature>.md` (com seções de contexto, checkboxes `- [ ]` e testes explícitos).
+* **O corte de escopo nunca atinge:** teste de cada tarefa, validação em fronteira de confiança, tratamento de erro, segurança, acessibilidade ou qualquer coisa que o usuário pediu explicitamente.
 * **Regra Obrigatória do Plano (Task Final Embutida no Plano):**
   Como o Codex é estritamente orientado pelas checkboxes do plano, o Claude **DEVE OBRIGATORIAMENTE** incluir como última tarefa do plano a etapa de disparo do AGY:
 
@@ -118,7 +120,7 @@ REQUISITO INICIAL:
   # 2. Aguarda a TUI confirmar pronta (repita uma vez se satisfied: false; ainda false → PARE e avise o usuário)
   orca terminal wait --terminal <handle> --for tui-idle --timeout-ms 120000 --json
   # 3. Só então injeta o prompt do plano
-  orca terminal send --terminal <handle> --text "Use a skill superpowers:executing-plans. Leia o plano em docs/superpowers/plans/<nome-do-plano>.md, revise criticamente, execute cada tarefa em TDD estrito com commits atômicos e atualize as checkboxes. Ao concluir a implementação, execute a Task Final do plano para acionar o AGY via Orca CLI conforme a skill orca-superpowers-handoff." --enter --json
+  orca terminal send --terminal <handle> --text "Use a skill superpowers:executing-plans e a skill ponytail no nível full (/ponytail full); sem a skill instalada, aplique o princípio na mão e diga isso no fim. Leia o plano em docs/superpowers/plans/<nome-do-plano>.md, revise criticamente, execute cada tarefa em TDD estrito com commits atômicos e atualize as checkboxes. Menor diff que cumpre cada tarefa: reuse helper, componente e padrão que já existem no repo e não crie abstração, wrapper, flag ou código 'para depois' que o plano não pediu — isso nunca reduz TDD, validação, segurança nem item do plano. Ao concluir a implementação, execute a Task Final do plano para acionar o AGY via Orca CLI conforme a skill orca-superpowers-handoff." --enter --json
   ```
 
 ---
@@ -126,12 +128,14 @@ REQUISITO INICIAL:
 ### Etapa 2: Codex (Executor)
 * **Responsabilidade:** Implementar o código e testes previstos no plano, sem atalhos.
 * **Superpower obrigatório:** `superpowers:executing-plans`.
+* **Skill requerida:** `ponytail` no nível `full` (`/ponytail full`) — menor diff que cumpre o plano aprovado. Sem a skill instalada no CLI, aplique o princípio na mão e registre isso no fechamento da etapa.
 * **Regras de Execução:**
   1. Carregar e ler o plano mais recente em `docs/superpowers/plans/`.
   2. Executar cada tarefa individualmente:
      - Escrever o teste automatizado correspondente antes do código.
      - Executar o teste e certificar-se de que falhou pelo motivo esperado.
-     - Escrever o código mínimo de produção para fazê-lo passar.
+     - Escrever o código mínimo de produção para fazê-lo passar: reuse o que já existe no repo, mantenha camadas e convenções atuais e não crie abstração, wrapper, flag, config ou código "para depois" que o plano não pediu.
+     - Preguiça é na solução, nunca na mudança: termine chamadores, testes e fixtures que o diff quebrar, e jamais corte validação, tratamento de erro, segurança, acessibilidade ou item do plano. Atalho com limite conhecido leva comentário `shortcut: <o limite>, <quando revisar>`.
      - Executar a suíte de testes e garantir aprovação.
      - Fazer commit da tarefa: `git commit -m "feat/fix: <resumo da tarefa>"`.
      - Marcar a tarefa no documento de plano com `- [x]`.
@@ -179,5 +183,7 @@ REQUISITO INICIAL:
 - **NUNCA** abrir o Codex sem aprovação expressa do usuário sobre o plano gerado pelo Claude.
 - **NUNCA** criar worktrees secundários separados para esse fluxo; a flag `--worktree active` deve ser sempre usada para manter o trabalho no mesmo diretório local.
 - **NUNCA** permitir que o Codex comite código sem os testes automatizados descritos em cada tarefa do plano.
+- **NUNCA** aceitar o ponytail como desculpa para pular teste, validação, segurança ou item do plano: ele encurta a solução, não o acabamento da mudança.
+- **NUNCA** ligar o ponytail no AGY (Etapa 3): quem audita não julga com o mesmo viés de economia de quem planejou e executou.
 - **NUNCA** aprovar o review no AGY baseado apenas em leitura visual de código: a suíte real de testes deve ser executada obrigatoriamente.
 - **NUNCA** despachar nenhum dos 4 agentes (Claude Code, Codex, AGY, OpenCode) em modo não-interativo: todo agente nasce como TUI interativa (`--focus` + `wait --for tui-idle`), e o prompt é injetado depois via `terminal send`. Sem TUI (duas tentativas de `satisfied: false`), interrompa e avise o usuário; jamais recaia em `-p`/`exec`/`run`.

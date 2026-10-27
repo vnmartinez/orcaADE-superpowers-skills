@@ -11,8 +11,8 @@ Coordena o ciclo completo de desenvolvimento dentro do **Orca ADE**, operando no
 
 Diferente do handoff em cadeia simples, o Orquestrador atua estritamente como **hub supervisor e despachante**: ele não escreve código de produção, não redige especificações e não faz code review diretamente. Ele gerencia o fluxo em 3 processos distintos acionados via **Orca CLI**:
 
-1. **Processo 1: Planejador (Planner):** Executa `superpowers:brainstorming` e `superpowers:writing-plans` para gerar a spec técnica e o plano com checkboxes.
-2. **Processo 2: Executor (Executor):** Assume após o gate de aprovação humana, executando o plano via `superpowers:executing-plans` com TDD estrito e commits atômicos.
+1. **Processo 1: Planejador (Planner):** Executa `superpowers:brainstorming` e `superpowers:writing-plans` sob `ponytail` nível `ultra`, para gerar a spec técnica e o plano com checkboxes no menor escopo que resolve o requisito.
+2. **Processo 2: Executor (Executor):** Assume após o gate de aprovação humana, executando o plano via `superpowers:executing-plans` sob `ponytail` nível `full`, com TDD estrito, menor diff e commits atômicos.
 3. **Processo 3: Revisor (Reviewer):** Audita a suíte de testes e o `git diff` via `superpowers:requesting-code-review` e `superpowers:verification-before-completion`.
 
 ```
@@ -26,7 +26,7 @@ Diferente do handoff em cadeia simples, o Orquestrador atua estritamente como **
 │    1. orca terminal create     ▼                                       │
 │       ┌────────────────────────────────────────────────┐               │
 │       │ [Processo 1: PLANNER (ex: Claude Code)]        │               │
-│       │ Executa: brainstorming + writing-plans         │               │
+│       │ Executa: brainstorming+writing-plans+ponytail  │               │
 │       │ Produz: docs/superpowers/specs/ & plans/       │               │
 │       └──────────────────────┬─────────────────────────┘               │
 │                              ▼                                         │
@@ -35,7 +35,7 @@ Diferente do handoff em cadeia simples, o Orquestrador atua estritamente como **
 │    3. orca terminal create   ▼                                         │
 │       ┌────────────────────────────────────────────────┐               │
 │       │ [Processo 2: EXECUTOR (ex: Codex)]             │               │
-│       │ Executa: executing-plans (TDD estrito)         │               │
+│       │ Executa: executing-plans (TDD+ponytail)        │               │
 │       │ Marca checkboxes [x] no plano                  │               │
 │       └──────────────────────┬─────────────────────────┘               │
 │                              ▼                                         │
@@ -93,6 +93,30 @@ Sugestão de pareamento agente↔modelo por papel — **não é regra nem lista 
 
 ---
 
+## Ponytail no Planejamento e na Execução
+
+[Ponytail](https://github.com/DietrichGebert/ponytail) é o modo "dev sênior preguiçoso": a menor mudança que resolve a tarefa **inteira**, sem abstração, opção, wrapper ou código "para depois" que ninguém pediu. Nesta família de skills ele é ligado **só nas fases de planejamento e execução** — o Reviewer audita sem ele, para não ter viés de economia ao julgar o próprio critério.
+
+| Fase | Nível | Motivo |
+|---|---|---|
+| Planner (Passo 1) | `ultra` | Além das regras, questiona o requisito antes de especificar: corta escopo caro onde a alavanca é maior (spec e plano) |
+| Executor (Passo 3) | `full` | Menor diff que cumpre o plano já aprovado, sem rediscutir o que passou pelo gate humano |
+
+Instalação no CLI de cada papel (os 4 agentes suportados têm adapter oficial):
+
+| Agente | Instalação |
+|---|---|
+| Claude Code | `/plugin marketplace add DietrichGebert/ponytail` e, em prompt separado, `/plugin install ponytail@ponytail` |
+| Codex | `codex plugin marketplace add DietrichGebert/ponytail` + `codex plugin add ponytail@ponytail` |
+| Antigravity CLI | `agy plugin install https://github.com/DietrichGebert/ponytail` |
+| OpenCode | `opencode plugin add @dietrichgebert/ponytail` |
+
+- **Nível vai sempre escrito no prompt injetado**, nunca só via `/ponytail <nível>`: Antigravity não tem hooks de ciclo de vida e não persiste nível entre turnos.
+- **Fallback obrigatório:** se o ponytail não estiver instalado no CLI daquele papel, o ciclo **não para**. O agente aplica o princípio declarado no próprio prompt (menor solução completa, zero abstração não pedida) e registra no aviso de conclusão que rodou sem a skill.
+- **Trava anti-atalho:** ponytail encurta a *solução*, nunca o *acabamento* da mudança. Ele jamais autoriza pular TDD, o teste de cada tarefa do plano, validação em fronteira de confiança, tratamento de erro, segurança, acessibilidade ou qualquer item pedido pelo usuário.
+
+---
+
 ## Quando Usar
 
 - Ao iniciar o desenvolvimento de features, refatorações ou correções complexas no Orca ADE.
@@ -130,6 +154,7 @@ Regras:
 - Se o usuário trocar o modelo, injete o flag correspondente na invocação daquela etapa (`claude --model <modelo>`, `codex -m <modelo>`). Se o CLI não aceitar flag de modelo, avise antes de seguir.
 - Se o modelo listado for fraco para o papel (ex.: `haiku`, ou modelo free do OpenCode em Planner/Reviewer/Executor), avise **uma vez** e sugira troca; a decisão é do usuário e vale sem insistir.
 - Sem a descoberta rodada e sem o usuário responder, não avance ao Passo 1 — mas aceite qualquer resposta: ele pode aceitar o default, trocar, indicar agente/modelo fora da lista, ou recusar a sugestão.
+- Na mesma pergunta, confirme o **ponytail** nas fases de planejamento e execução (Planner `ultra`, Executor `full` — ver "Ponytail no Planejamento e na Execução"). Não instalado, ou recusado pelo usuário: siga com o fallback declarado no prompt e não bloqueie o ciclo.
 
 > **Sugestão Padrão Recomendada:**
 > - **Orquestrador:** Claude Code `claude --dangerously-skip-permissions --model sonnet`
@@ -177,16 +202,20 @@ orca terminal send --terminal <handle> --text "<TEMPLATE_DO_PROMPT_ABAIXO>" --en
 
 #### Template de Prompt injetado no Planner:
 ```text
-Use as skills superpowers:brainstorming e superpowers:writing-plans.
+Use as skills superpowers:brainstorming, superpowers:writing-plans e ponytail no nível ultra (/ponytail ultra).
+Se a skill ponytail não estiver instalada neste CLI, aplique o princípio na mão e diga isso no aviso final: menor solução que resolve o requisito inteiro, sem feature, opção, abstração ou "para depois" que ninguém pediu.
 REQUISITO DO USUÁRIO:
 <REQUISITO_INICIAL>
 
 DIRETRIZES:
 1. Explore a arquitetura e elabore a especificação técnica em docs/superpowers/specs/YYYY-MM-DD-<feature>-design.md.
-2. Escreva o plano de tarefas executável com TDD em docs/superpowers/plans/YYYY-MM-DD-<feature>.md com checkboxes '- [ ]' e testes explícitos por tarefa.
-3. Ao concluir a criação dos dois arquivos e comitá-los, avise o orquestrador (obrigatório, mesmo em falha):
+2. Antes de escolher a solução, percorra as opções do ponytail na ordem: já existe no repo (helper, componente, serviço, padrão) > biblioteca padrão ou recurso da plataforma > dependência já instalada > código novo mínimo. Nunca adicione dependência por poucas linhas.
+3. Escreva o plano de tarefas executável com TDD em docs/superpowers/plans/YYYY-MM-DD-<feature>.md com checkboxes '- [ ]' e testes explícitos por tarefa.
+4. Encerre a spec com duas seções de uma linha cada: "Deixado de fora" (o que o requisito não justifica) e "Risco conhecido".
+5. O corte de escopo nunca atinge: teste de cada tarefa, validação em fronteira de confiança, tratamento de erro, segurança, acessibilidade ou qualquer coisa que o usuário pediu explicitamente.
+6. Ao concluir a criação dos dois arquivos e comitá-los, avise o orquestrador (obrigatório, mesmo em falha):
    orca terminal send --terminal <ORQ_HANDLE> --text "ETAPA planner CONCLUÍDA | status: OK | resumo: <3 frases> | plano: docs/superpowers/plans/<nome>.md" --enter --json
-4. Só depois do envio, encerre a execução.
+7. Só depois do envio, encerre a execução.
 ```
 
 O Orquestrador aguarda a notificação do Planner chegar ao seu terminal (a mensagem injetada entra como nova entrada na sessão dele) e confere a geração do arquivo em `docs/superpowers/plans/`. Se não houver aviso em 10 minutos, leia o terminal do Planner (`orca terminal read --terminal <handle_planner> --json`) antes de qualquer conclusão — ausência de aviso nunca conta como conclusão.
@@ -220,16 +249,20 @@ orca terminal send --terminal <handle> --text "<TEMPLATE_DO_PROMPT_ABAIXO>" --en
 
 #### Template de Prompt injetado no Executor:
 ```text
-Use a skill superpowers:executing-plans.
+Use a skill superpowers:executing-plans e a skill ponytail no nível full (/ponytail full).
+Se a skill ponytail não estiver instalada neste CLI, aplique o princípio na mão e diga isso no aviso final: menor diff que cumpre a tarefa inteira.
 Consulte o plano em docs/superpowers/plans/<NOME_DO_PLANO>.md.
 
 REGRAS RÍGIDAS DE EXECUÇÃO:
 1. Execute cada tarefa do plano estritamente em TDD (escreva o teste, veja falhar, implemente o código, veja passar).
-2. Faça commit atômico por tarefa no formato: git commit -m "feat/fix: <resumo>".
-3. Atualize o arquivo do plano marcando a checkbox correspondente com '- [x]'.
-4. Ao concluir todas as tarefas e garantir que a suíte de testes passa, avise o orquestrador (obrigatório, mesmo em falha):
+2. Menor diff que cumpre a tarefa inteira: reuse o helper, componente ou padrão que já existe no repo, mantenha as camadas e convenções atuais e não crie abstração, wrapper, flag, config ou código "para depois" que o plano não pediu. Deleção vale mais que adição.
+3. Preguiça é na solução, nunca na mudança: termine tudo que a tarefa alcança (chamadores, testes, fixtures que seu diff quebrar) e nunca corte validação, tratamento de erro, segurança, acessibilidade ou item do plano. Atalho com limite conhecido leva comentário no código no formato: shortcut: <o limite>, <quando revisar>.
+4. Faça commit atômico por tarefa no formato: git commit -m "feat/fix: <resumo>".
+5. Atualize o arquivo do plano marcando a checkbox correspondente com '- [x]'.
+6. Divergiu do plano para fazer menos código? Não decida sozinho: registre a divergência no aviso de conclusão para o orquestrador levar ao usuário.
+7. Ao concluir todas as tarefas e garantir que a suíte de testes passa, avise o orquestrador (obrigatório, mesmo em falha):
    orca terminal send --terminal <ORQ_HANDLE> --text "ETAPA executor CONCLUÍDA | status: <OK|FALHA> | resumo: <3 frases> | plano: <caminho-do-plano>" --enter --json
-5. Só depois do envio, encerre.
+8. Só depois do envio, encerre.
 ```
 
 O Orquestrador aguarda o aviso do Executor no seu terminal e confere que todas as checkboxes principais do plano estão marcadas com `[x]`. Se não houver aviso em 10 minutos, leia o terminal do Executor antes de qualquer conclusão.
@@ -315,3 +348,6 @@ orca terminal wait --terminal <handle> --for exit --timeout-ms 300000 --json
 - **TUI é OBRIGATÓRIA em 100% das etapas:** todo `terminal create` de agente usa comando interativo + `--focus` + `wait --for tui-idle` antes do envio do prompt. **NUNCA** exista fallback para `-p`/`exec`/`run`: se a TUI não abrir (duas tentativas de `tui-idle` com `satisfied: false`), interrompa o fluxo e avise o usuário.
 - **NUNCA avance de etapa sem o aviso explícito do agente:** toda injeção de prompt deve conter o `<ORQ_HANDLE>` real e o comando de notificação; sem `ETAPA <nome> CONCLUÍDA` no terminal do Orquestrador, a etapa está indeterminada — leia o terminal do agente antes de decidir.
 - **NUNCA se esqueça de resolver o handle do orquestrador (`orca terminal show`) antes do Passo 1:** sem ele os agentes não têm destino para o aviso.
+- **NUNCA aceite o ponytail como desculpa para pular teste, validação, segurança ou item do plano:** ele encurta a solução, não o acabamento da mudança. Diff menor com tarefa inacabada é `status: FALHA`.
+- **NUNCA ligue o ponytail no Reviewer (Passo 4):** quem audita não pode julgar com o mesmo viés de economia de quem planejou e executou.
+- **NUNCA trave o ciclo porque o ponytail não está instalado no CLI do papel:** os templates já declaram o princípio como fallback; siga e registre no aviso.
