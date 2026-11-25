@@ -679,12 +679,42 @@ test_installer_fallback_without_orca_detects_home_dirs() {
   assert_not_exists "fallback_no_gemini" "$tmp/.gemini"
 }
 
+test_installer_canonical_skip_does_not_propagate_or_loop_update() {
+  local tmp out1 out2 status state_content
+  tmp="$(make_tmp_dir)"
+  mkdir -p "$tmp/.agents/skills/orca-superpowers-orchestrator"
+  printf 'custom old\n' > "$tmp/.agents/skills/orca-superpowers-orchestrator/SKILL.md"
+
+  out1="$(HOME="$tmp" bash "$INSTALLER_SH" --agents-file "$MINIMAL_AGENTS_FIXTURE" --skill orca-superpowers-orchestrator 2>&1)"
+  status=$?
+  assert_eq "canon_skip_run1_exit" "0" "$status"
+  assert_contains "canon_skip_run1_canonical" "ACTION|SKIP|orca-superpowers-orchestrator|.agents/skills/orca-superpowers-orchestrator|unmanaged-conflict" "$out1"
+  assert_contains "canon_skip_run1_claude" "ACTION|SKIP|orca-superpowers-orchestrator|.claude/skills/orca-superpowers-orchestrator|canonical-skipped" "$out1"
+  assert_contains "canon_skip_run1_antigravity" "ACTION|SKIP|orca-superpowers-orchestrator|.gemini/config/skills/orca-superpowers-orchestrator|canonical-skipped" "$out1"
+  assert_not_exists "canon_skip_no_claude_target" "$tmp/.claude/skills/orca-superpowers-orchestrator"
+  assert_not_exists "canon_skip_no_gemini_target" "$tmp/.gemini/config/skills/orca-superpowers-orchestrator"
+
+  state_content=""
+  if [ -f "$tmp/.agents/.orca-superpowers-installed" ]; then
+    state_content="$(cat "$tmp/.agents/.orca-superpowers-installed")"
+  fi
+  assert_not_contains "canon_skip_no_false_target_state" "TARGET|" "$state_content"
+
+  out2="$(HOME="$tmp" bash "$INSTALLER_SH" --agents-file "$MINIMAL_AGENTS_FIXTURE" --skill orca-superpowers-orchestrator 2>&1)"
+  status=$?
+  assert_eq "canon_skip_run2_exit" "0" "$status"
+  assert_contains "canon_skip_run2_skipped_3" "|skipped=3|" "$out2"
+  assert_not_contains "canon_skip_run2_no_update" "ACTION|UPDATE|" "$out2"
+  assert_contains "canon_skip_run2_updated_0" "|updated=0|" "$out2"
+}
+
 test_installer_conflict_skip_and_force_backup
 test_installer_inplace_update_when_managed_version_changes
 test_installer_local_mode_respects_existing_agent_dirs
 test_installer_uninstall_reversibility_and_third_party_isolation
 test_installer_uninstall_preserves_unmanaged_copy_unless_forced
 test_installer_fallback_without_orca_detects_home_dirs
+test_installer_canonical_skip_does_not_propagate_or_loop_update
 
 test_plugin_readme() {
   assert_exists "plugin_readme_exists" "$PLUGIN_README"

@@ -639,10 +639,11 @@ install_flow() {
   target_pairs="$(build_target_pairs "$agents_list" "$mode_str")"
 
   local c_installed=0 c_updated=0 c_linked=0 c_copied=0 c_kept=0 c_skipped=0 c_backed_up=0 c_removed=0
-  local skill src_dir src_digest canon_rel canon_abs entry cur_digest st_ver st_dig
+  local skill src_dir src_digest canon_rel canon_abs entry cur_digest st_ver st_dig canon_skipped
 
   while IFS= read -r skill; do
     [ -z "$skill" ] && continue
+    canon_skipped=0
     src_dir="$REPO_ROOT/$skill"
     if [ ! -d "$src_dir" ]; then
       printf 'Error: skill source directory missing: %s\n' "$src_dir" >&2
@@ -700,6 +701,7 @@ install_flow() {
           printf 'ACTION|SKIP|%s|%s|unmanaged-conflict\n' "$skill" "$canon_rel"
           printf 'Warning: unmanaged copy exists at %s (use --force to backup and replace)\n' "$canon_rel" >&2
           c_skipped=$((c_skipped + 1))
+          canon_skipped=1
         fi
       fi
     fi
@@ -712,6 +714,12 @@ install_flow() {
       t_dir="$(printf '%s\n' "$pair" | awk -F'|' '{ print $2 }')"
       dest_rel="$t_dir/$skill"
       dest_abs="$BASE_DIR/$dest_rel"
+
+      if [ "$canon_skipped" -eq 1 ]; then
+        printf 'ACTION|SKIP|%s|%s|canonical-skipped\n' "$skill" "$dest_rel"
+        c_skipped=$((c_skipped + 1))
+        continue
+      fi
 
       if [ ! -e "$dest_abs" ] && [ ! -L "$dest_abs" ]; then
         if [ "$DRY_RUN" -eq 1 ]; then
