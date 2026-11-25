@@ -507,13 +507,13 @@ test_root_readme_5_destinations() {
   assert_contains "root_readme_skill_auto" "orca-superpowers-orchestration-auto" "$doc"
 
   assert_contains "root_readme_bash_dest_claude" '$HOME/.claude/skills/$skill' "$doc"
-  assert_contains "root_readme_bash_dest_gemini" '$HOME/.gemini/config/plugins/superpowers/skills/$skill' "$doc"
+  assert_contains "root_readme_bash_dest_gemini" '$HOME/.gemini/config/skills/$skill' "$doc"
   assert_contains "root_readme_bash_dest_codex" '$HOME/.codex/skills/$skill' "$doc"
   assert_contains "root_readme_bash_dest_agents" '$HOME/.agents/skills/$skill' "$doc"
   assert_contains "root_readme_bash_dest_opencode" '$HOME/.config/opencode/skills/$skill' "$doc"
 
   assert_contains "root_readme_ps_dest_claude" '\.claude\skills' "$doc"
-  assert_contains "root_readme_ps_dest_gemini" '\.gemini\config\plugins\superpowers\skills' "$doc"
+  assert_contains "root_readme_ps_dest_gemini" '\.gemini\config\skills' "$doc"
   assert_contains "root_readme_ps_dest_codex" '\.codex\skills' "$doc"
   assert_contains "root_readme_ps_dest_agents" '\.agents\skills' "$doc"
   assert_contains "root_readme_ps_dest_opencode" '\.config\opencode\skills' "$doc"
