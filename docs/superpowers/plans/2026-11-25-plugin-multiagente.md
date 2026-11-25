@@ -96,7 +96,7 @@ git commit -m "feat: adiciona manifesto do plugin multiagente, fixture e testes 
     - `SUMMARY|installed=<n>|updated=<n>|linked=<n>|copied=<n>|kept=<n>|skipped=<n>|backed_up=<n>|removed=<n>`
   - Exit codes: `0` ok, `1` erro operacional (skill desconhecida, manifesto/agents-file ausente), `2` argumento CLI inválido.
 
-- [ ] **Step 1: Adicionar testes do instalador core em `tests/test-plugin-installer.sh` (RED)**
+- [x] **Step 1: Adicionar testes do instalador core em `tests/test-plugin-installer.sh` (RED)**
 
 Adicionar e invocar os seguintes testes (todos usando `mktemp -d` + `trap` de limpeza para isolamento total):
 1. `test_installer_exists_syntax_lf_and_no_forbidden_runtimes`: `scripts/install-skills.sh` existe, passa em `bash -n`, contém apenas LF (`\n`), não contém `python`, `python3`, `node`, `jq`, `pwsh`, `powershell`, `cmd.exe`, `%APPDATA%`, `%TEMP%` nem `$env:USERPROFILE`.
@@ -107,12 +107,12 @@ Adicionar e invocar os seguintes testes (todos usando `mktemp -d` + `trap` de li
 6. `test_installer_universal_and_skill_filter`: rodando com `--agent universal --skill orca-superpowers-merge`, instala apenas `$tmp/.agents/skills/orca-superpowers-merge` e não cria `.claude` nem `.gemini` nem as outras 3 skills.
 7. `test_installer_copy_mode_idempotent`: rodando com `--copy --agents-file tests/fixtures/plugin-agents-minimal.json`, destinos em `.claude/skills` são diretórios reais (não symlinks) registrados como `copy` no estado, e a 2ª execução com `--copy` produz `kept=12` e `copied=0`.
 
-- [ ] **Step 2: Rodar a suíte e confirmar que falha (RED)**
+- [x] **Step 2: Rodar a suíte e confirmar que falha (RED)**
 
 Run: `bash tests/test-plugin-installer.sh`
 Expected: FAIL indicando que `scripts/install-skills.sh` ainda não existe.
 
-- [ ] **Step 3: Implementar `scripts/install-skills.sh` (fluxo core de instalação)**
+- [x] **Step 3: Implementar `scripts/install-skills.sh` (fluxo core de instalação)**
 
 Implementar `scripts/install-skills.sh` em bash puro + POSIX `awk` (LF `\n`):
 - Parse de CLI (`--skill`, `--agent`, `--local`, `--target-dir`, `--dry-run`, `--force`, `--uninstall`, `--copy`, `--agents-file`, `--list`, `-h|--help`).
@@ -124,12 +124,12 @@ Implementar `scripts/install-skills.sh` em bash puro + POSIX `awk` (LF `\n`):
 - Leitura e escrita atômica de `$STATE_FILE` com caminhos exclusivamente relativos a `$BASE_DIR`.
 - Emissão exata das linhas `PLUGIN|...`, `ACTION|...` e `SUMMARY|...`.
 
-- [ ] **Step 4: Rodar os testes da Task 2 e confirmar que passam (GREEN)**
+- [x] **Step 4: Rodar os testes da Task 2 e confirmar que passam (GREEN)**
 
 Run: `bash tests/test-plugin-installer.sh`
 Expected: todos os testes das Tasks 1 e 2 PASS (`FAIL=0`).
 
-- [ ] **Step 5: Commit atômico da Task 2**
+- [x] **Step 5: Commit atômico da Task 2**
 
 ```bash
 git add scripts/install-skills.sh tests/test-plugin-installer.sh

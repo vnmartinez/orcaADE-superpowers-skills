@@ -321,6 +321,209 @@ test_manifest_skills_match_repo_root
 test_manifest_agent_paths_complete
 test_manifest_and_fixture_no_pii_or_windows_paths
 
+test_installer_exists_syntax_lf_and_no_forbidden_runtimes() {
+  assert_exists "installer_exists" "$INSTALLER_SH"
+  if [ ! -f "$INSTALLER_SH" ]; then
+    return
+  fi
+  if bash -n "$INSTALLER_SH" 2>/dev/null; then
+    printf 'PASS: installer_bash_syntax\n'
+    PASS=$((PASS + 1))
+  else
+    printf 'FAIL: installer_bash_syntax\n' >&2
+    FAIL=$((FAIL + 1))
+  fi
+  if awk '{ if (index($0, "\r") > 0) exit 1 }' "$INSTALLER_SH"; then
+    printf 'PASS: installer_lf_only\n'
+    PASS=$((PASS + 1))
+  else
+    printf 'FAIL: installer_lf_only (contains CRLF)\n' >&2
+    FAIL=$((FAIL + 1))
+  fi
+  local content
+  content="$(cat "$INSTALLER_SH")"
+  if printf '%s\n' "$content" | grep -E -q '(^|[^a-zA-Z0-9_-])(python3?|node|jq|pwsh|powershell)([^a-zA-Z0-9_-]|$)'; then
+    printf 'FAIL: installer_no_forbidden_runtimes\n' >&2
+    FAIL=$((FAIL + 1))
+  else
+    printf 'PASS: installer_no_forbidden_runtimes\n'
+    PASS=$((PASS + 1))
+  fi
+  assert_not_contains "installer_no_cmd_exe" "cmd.exe" "$content"
+  assert_not_contains "installer_no_appdata" "%APPDATA%" "$content"
+  assert_not_contains "installer_no_temp" "%TEMP%" "$content"
+  assert_not_contains "installer_no_userprofile" '$env:USERPROFILE' "$content"
+}
+
+test_installer_list_and_help() {
+  if [ ! -f "$INSTALLER_SH" ]; then
+    printf 'FAIL: test_installer_list_and_help (installer missing)\n' >&2
+    FAIL=$((FAIL + 1))
+    return
+  fi
+  local out status
+  out="$(bash "$INSTALLER_SH" --list 2>&1)"
+  status=$?
+  assert_eq "installer_list_exit" "0" "$status"
+  assert_contains "installer_list_id" "superpowers-skills" "$out"
+  assert_contains "installer_list_version" "1.0.0" "$out"
+  assert_contains "installer_list_s1" "orca-superpowers-orchestrator" "$out"
+  assert_contains "installer_list_s2" "orca-superpowers-orchestration-auto" "$out"
+  assert_contains "installer_list_s3" "orca-superpowers-review-loop" "$out"
+  assert_contains "installer_list_s4" "orca-superpowers-merge" "$out"
+
+  out="$(bash "$INSTALLER_SH" --help 2>&1)"
+  status=$?
+  assert_eq "installer_help_exit" "0" "$status"
+  assert_contains "installer_help_dry_run" "--dry-run" "$out"
+  assert_contains "installer_help_force" "--force" "$out"
+  assert_contains "installer_help_uninstall" "--uninstall" "$out"
+  assert_contains "installer_help_local" "--local" "$out"
+  assert_contains "installer_help_agent" "--agent" "$out"
+  assert_contains "installer_help_skill" "--skill" "$out"
+
+  bash "$INSTALLER_SH" --nao-existe >/dev/null 2>&1
+  status=$?
+  assert_eq "installer_invalid_arg_exit_2" "2" "$status"
+
+  bash "$INSTALLER_SH" --skill nao-existe >/dev/null 2>&1
+  status=$?
+  assert_eq "installer_unknown_skill_exit_1" "1" "$status"
+}
+
+test_installer_dry_run_is_read_only() {
+  if [ ! -f "$INSTALLER_SH" ]; then
+    printf 'FAIL: test_installer_dry_run_is_read_only (installer missing)\n' >&2
+    FAIL=$((FAIL + 1))
+    return
+  fi
+  local tmp out status created
+  tmp="$(make_tmp_dir)"
+  out="$(HOME="$tmp" bash "$INSTALLER_SH" --agents-file "$MINIMAL_AGENTS_FIXTURE" --dry-run 2>&1)"
+  status=$?
+  assert_eq "dry_run_exit" "0" "$status"
+  assert_contains "dry_run_plugin_header" "PLUGIN|superpowers-skills|1.0.0|global|dry-run|agents:claude,codex,antigravity,future-cli" "$out"
+  assert_contains "dry_run_canonical_orch" "ACTION|INSTALL|orca-superpowers-orchestrator|.agents/skills/orca-superpowers-orchestrator|" "$out"
+  assert_contains "dry_run_claude_link" "ACTION|LINK|orca-superpowers-orchestrator|.claude/skills/orca-superpowers-orchestrator|" "$out"
+  assert_contains "dry_run_antigravity_link" "ACTION|LINK|orca-superpowers-orchestrator|.gemini/config/skills/orca-superpowers-orchestrator|" "$out"
+
+  created="$(find "$tmp" -mindepth 1)"
+  assert_eq "dry_run_creates_nothing" "" "$created"
+}
+
+test_installer_global_smoke_dynamic_and_subdirectories() {
+  if [ ! -f "$INSTALLER_SH" ]; then
+    printf 'FAIL: test_installer_global_smoke_dynamic_and_subdirectories (installer missing)\n' >&2
+    FAIL=$((FAIL + 1))
+    return
+  fi
+  local tmp out status s state_content
+  tmp="$(make_tmp_dir)"
+  out="$(HOME="$tmp" bash "$INSTALLER_SH" --agents-file "$MINIMAL_AGENTS_FIXTURE" 2>&1)"
+  status=$?
+  assert_eq "global_install_exit" "0" "$status"
+  assert_contains "global_install_header" "PLUGIN|superpowers-skills|1.0.0|global|apply|agents:claude,codex,antigravity,future-cli" "$out"
+
+  for s in \
+    orca-superpowers-orchestrator \
+    orca-superpowers-orchestration-auto \
+    orca-superpowers-review-loop \
+    orca-superpowers-merge
+  do
+    assert_exists "global_shared_$s" "$tmp/.agents/skills/$s/SKILL.md"
+    assert_exists "global_claude_$s" "$tmp/.claude/skills/$s/SKILL.md"
+    assert_exists "global_antigravity_$s" "$tmp/.gemini/config/skills/$s/SKILL.md"
+  done
+
+  assert_exists "global_subdir_get_quotas" "$tmp/.agents/skills/orca-superpowers-orchestration-auto/scripts/get-quotas.sh"
+  if bash -n "$tmp/.agents/skills/orca-superpowers-orchestration-auto/scripts/get-quotas.sh" 2>/dev/null; then
+    printf 'PASS: global_subdir_get_quotas_syntax\n'
+    PASS=$((PASS + 1))
+  else
+    printf 'FAIL: global_subdir_get_quotas_syntax\n' >&2
+    FAIL=$((FAIL + 1))
+  fi
+
+  assert_not_exists "global_no_codex_dir" "$tmp/.codex"
+  assert_not_exists "global_no_future_cli_dir" "$tmp/.future-cli"
+  assert_exists "global_state_file_exists" "$tmp/.agents/.orca-superpowers-installed"
+  if [ -f "$tmp/.agents/.orca-superpowers-installed" ]; then
+    state_content="$(cat "$tmp/.agents/.orca-superpowers-installed")"
+    assert_not_contains "global_state_no_tmp_abs_path" "$tmp" "$state_content"
+    assert_not_contains "global_state_no_at_pii" "@" "$state_content"
+  fi
+}
+
+test_installer_idempotent_second_run() {
+  if [ ! -f "$INSTALLER_SH" ]; then
+    printf 'FAIL: test_installer_idempotent_second_run (installer missing)\n' >&2
+    FAIL=$((FAIL + 1))
+    return
+  fi
+  local tmp out status
+  tmp="$(make_tmp_dir)"
+  HOME="$tmp" bash "$INSTALLER_SH" --agents-file "$MINIMAL_AGENTS_FIXTURE" >/dev/null 2>&1
+  out="$(HOME="$tmp" bash "$INSTALLER_SH" --agents-file "$MINIMAL_AGENTS_FIXTURE" 2>&1)"
+  status=$?
+  assert_eq "idempotent_exit" "0" "$status"
+  assert_contains "idempotent_summary" "SUMMARY|installed=0|updated=0|linked=0|copied=0|kept=12|skipped=0|backed_up=0|removed=0" "$out"
+}
+
+test_installer_universal_and_skill_filter() {
+  if [ ! -f "$INSTALLER_SH" ]; then
+    printf 'FAIL: test_installer_universal_and_skill_filter (installer missing)\n' >&2
+    FAIL=$((FAIL + 1))
+    return
+  fi
+  local tmp out status
+  tmp="$(make_tmp_dir)"
+  out="$(HOME="$tmp" bash "$INSTALLER_SH" --agent universal --skill orca-superpowers-merge 2>&1)"
+  status=$?
+  assert_eq "universal_filter_exit" "0" "$status"
+  assert_contains "universal_filter_header" "PLUGIN|superpowers-skills|1.0.0|global|apply|agents:universal" "$out"
+  assert_exists "universal_merge_installed" "$tmp/.agents/skills/orca-superpowers-merge/SKILL.md"
+  assert_not_exists "universal_no_orch" "$tmp/.agents/skills/orca-superpowers-orchestrator"
+  assert_not_exists "universal_no_claude" "$tmp/.claude"
+  assert_not_exists "universal_no_gemini" "$tmp/.gemini"
+}
+
+test_installer_copy_mode_idempotent() {
+  if [ ! -f "$INSTALLER_SH" ]; then
+    printf 'FAIL: test_installer_copy_mode_idempotent (installer missing)\n' >&2
+    FAIL=$((FAIL + 1))
+    return
+  fi
+  local tmp out status dest state_content
+  tmp="$(make_tmp_dir)"
+  out="$(HOME="$tmp" bash "$INSTALLER_SH" --copy --agents-file "$MINIMAL_AGENTS_FIXTURE" 2>&1)"
+  status=$?
+  assert_eq "copy_mode_exit" "0" "$status"
+  dest="$tmp/.claude/skills/orca-superpowers-merge"
+  if [ -d "$dest" ] && [ ! -L "$dest" ]; then
+    printf 'PASS: copy_mode_claude_is_real_dir\n'
+    PASS=$((PASS + 1))
+  else
+    printf 'FAIL: copy_mode_claude_is_real_dir\n' >&2
+    FAIL=$((FAIL + 1))
+  fi
+  state_content="$(cat "$tmp/.agents/.orca-superpowers-installed")"
+  assert_contains "copy_mode_state_records_copy" "|copy|" "$state_content"
+
+  out="$(HOME="$tmp" bash "$INSTALLER_SH" --copy --agents-file "$MINIMAL_AGENTS_FIXTURE" 2>&1)"
+  status=$?
+  assert_eq "copy_mode_second_exit" "0" "$status"
+  assert_contains "copy_mode_second_kept_12" "kept=12|" "$out"
+  assert_contains "copy_mode_second_copied_0" "|copied=0|" "$out"
+}
+
+test_installer_exists_syntax_lf_and_no_forbidden_runtimes
+test_installer_list_and_help
+test_installer_dry_run_is_read_only
+test_installer_global_smoke_dynamic_and_subdirectories
+test_installer_idempotent_second_run
+test_installer_universal_and_skill_filter
+test_installer_copy_mode_idempotent
+
 printf 'Summary: PASS=%d FAIL=%d\n' "$PASS" "$FAIL"
 if [ "$FAIL" -gt 0 ]; then
   exit 1
