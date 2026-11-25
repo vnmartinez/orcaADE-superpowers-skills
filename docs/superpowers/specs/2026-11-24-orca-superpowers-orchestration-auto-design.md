@@ -1,6 +1,6 @@
 # Especificação Técnica — `orca-superpowers-orchestration-auto`
 
-**Data:** 2026-11-24 (Revisão cross-platform)
+**Data:** 2026-11-25 (Revisão 3 — bash/Git Bash + agent-agnostic)
 **Repositório:** `orcaADE-superpowers-skills`
 **Branch:** `main`
 **Status:** Proposta revisada (aguardando gate humano via orquestrador)
@@ -9,21 +9,22 @@
 
 ## 1. Objetivo e Escopo
 
-Criar a skill **`orca-superpowers-orchestration-auto`** no repositório `orcaADE-superpowers-skills`, compatível com **Windows, macOS e Linux**, seguindo o mesmo padrão estrutural e operacional das skills existentes (`orca-superpowers-orchestrator`, `orca-superpowers-review-loop`, `orca-superpowers-merge`).
+Criar a skill **`orca-superpowers-orchestration-auto`** no repositório `orcaADE-superpowers-skills`, **cross-platform (Windows via Git Bash, macOS e Linux)** e **agent-agnostic**, seguindo o padrão estrutural e operacional das skills existentes (`orca-superpowers-orchestrator`, `orca-superpowers-review-loop`, `orca-superpowers-merge`).
 
-A skill entrega o mesmo ciclo ponta a ponta do `orca-superpowers-orchestrator` (**Planner → Gate humano do plano → Executor → Reviewer → Consolidação**) no mesmo worktree ativo do Orca ADE (`--worktree active`) com **TUI interativa obrigatória**, substituindo a alocação manual por um **motor determinístico de roteamento orientado a tarefa e cota real**:
+A skill entrega o mesmo ciclo ponta a ponta do `orca-superpowers-orchestrator` (**Planner → Gate humano do plano → Executor → Reviewer → Consolidação**) no mesmo worktree ativo do Orca ADE (`--worktree active`) com **TUI interativa obrigatória**, mas substitui a alocação manual e a lista fixa de CLIs por:
 
+- **Descoberta dinâmica de agentes instalados:** `orca agent installed --worktree active --json` é a fonte de verdade em tempo de execução — a skill nunca fixa 4 CLIs nem inventa agentes.
 - **Zero perguntas de alocação:** o orquestrador nunca pergunta ao usuário qual agente ou modelo executa Planner, Executor ou Reviewer.
-- **Único gate humano no fluxo normal:** aprovação do plano gerado pelo Planner (Passo 2). A única exceção configurável é o modo `onAllCritical: "ask"` (equivalente generalizado do `onBothCritical` do Alethe) quando todos os provedores com leitura válida ultrapassam o limiar crítico.
-- **Medição real de cota portátil antes da decisão:** coleta local e reexecutável nos 3 SOs das janelas de uso (5 horas, semanal, Opus/modelo e buckets) de `claude`, `codex` e `agy`, tratando provedores sem leitura (`opencode`, falhas de rede ou SO sem backend de credencial disponível) como **não críticos**.
-- **Trilha de auditoria completa:** toda decisão registra `preset`, `kind`, `effortClass`, snapshot das cotas lidas, regra vencedora (`rule:<id>`), papel escolhido, eventuais fallbacks por cota ou independência de vendor, e modelo/esforço efetivamente despachados.
+- **Único gate humano no fluxo normal:** aprovação do plano gerado pelo Planner (Passo 2). A única exceção configurável é `onBothCritical: "ask"` quando todos os provedores com leitura válida ultrapassam o limiar crítico.
+- **Medição real de cota cross-platform e agent-agnostic:** `orca account list --json` (`result.rateLimits`) é a fonte principal (já normalizada pelo Orca para todos os provedores conectados, com janelas de 5h, semanal e buckets do Antigravity), com fallback documentado via `curl` para endpoints diretos quando o Orca não estiver disponível.
+- **Trilha de auditoria completa:** toda decisão registra `preset`, `kind`, `effortClass`, agentes instalados, snapshot das cotas lidas, regra vencedora (`rule:<id>`), papel escolhido (`role:<papel>`), `agent:<id>`, `model:<id>`, eventuais fallbacks (`fallback:<de→para> por cota` ou por agente não instalado) e independência de vendor no Reviewer.
 
-> **Escolha de runtime único (cross-platform):** o coletor de cotas e a suíte de testes usam **Python 3 (apenas biblioteca padrão, zero dependências externas)** como único caminho principal, por rodar de forma idêntica em Windows, macOS e Linux (`pathlib.Path.home()`, `shutil.which()`, `urllib.request`, `unittest`) e acessar o keyring nativo de cada SO sem manter duas implementações paralelas.
+> **Escolha de runtime único (zero dependências externas):** o coletor de cotas e a suíte de testes usam **bash puro** + utilitários POSIX que acompanham o Git (`awk`, `sed`, `grep`, `tr`, `cut`, `curl`), porque **quem tem Orca tem Git** (Git Bash no Windows, bash nativo no macOS/Linux) — sem exigir `python`, `node`, `jq`, `pwsh`, PowerShell ou `bats`.
 
 ### Fora de Escopo
 
-- Alterar o comportamento da skill manual `orca-superpowers-orchestrator` (que continua perguntando ao usuário).
-- Criar daemon, serviço em background ou exigir pacotes externos (`pip install`, `npm install`, compilação Rust).
+- Alterar o comportamento da skill manual `orca-superpowers-orchestrator`.
+- Exigir qualquer runtime adicional além do Git + Orca CLI.
 - Implementar malha de review reprovado ou merge automatizado (continuam delegados a `orca-superpowers-review-loop` e `orca-superpowers-merge`).
 
 ---
@@ -32,25 +33,33 @@ A skill entrega o mesmo ciclo ponta a ponta do `orca-superpowers-orchestrator` (
 
 | Caminho | Responsabilidade |
 |---|---|
-| `orca-superpowers-orchestration-auto/SKILL.md` | Definição completa da skill (frontmatter YAML `name`/`description` em inglês no padrão da família; protocolo operacional em português, presets JSON, algoritmo de roteamento, coleta portátil de cotas, templates de prompt e Red Flags) |
+| `orca-superpowers-orchestration-auto/SKILL.md` | Definição completa da skill (frontmatter YAML `name`/`description` em inglês no padrão da família; protocolo operacional em português, descoberta dinâmica via Orca, presets JSON, algoritmo determinístico de roteamento, leitura de cotas via `orca account list` + fallback `curl`, templates de prompt e Red Flags) |
 | `orca-superpowers-orchestration-auto/README.md` | Resumo da skill no padrão das 3 skills existentes (`Conteúdo`, `Visão Geral`, `Garantias`) |
-| `orca-superpowers-orchestration-auto/scripts/get_quotas.py` | Script Python 3 (stdlib pura) reexecutável em Windows, macOS e Linux e importável para testes offline; mede cotas reais de `claude`, `codex`, `agy` e reporta `opencode` como indisponível em JSON normalizado sem jamais expor segredos |
-| `tests/test_orchestration_auto.py` | Suíte TDD portátil (`python3 -m unittest`): testes unitários offline dos parsers de cota + normalização + validações estruturais/determinísticas de `SKILL.md`, `README.md`, presets JSON, ausência de caminhos/comandos Windows-only e `README.md` da raiz |
-| `README.md` (raiz) | Adicionar `orca-superpowers-orchestration-auto` à tabela `## Skills` e atualizar a instalação nos **5 destinos** (`~/.claude/skills`, `~/.gemini/config/plugins/superpowers/skills`, `~/.codex/skills`, `~/.agents/skills`, `~/.config/opencode/skills`) com exemplos para **macOS/Linux (POSIX)** e **Windows (PowerShell)** |
+| `orca-superpowers-orchestration-auto/scripts/get-quotas.sh` | Script **bash puro** (`awk`/`sed`/`grep`/`tr`/`cut`, sem `jq`/`python`/`node`/`pwsh`) que consulta `orca agent installed --worktree active --json` e `orca account list --json` (ou fixtures `--agents-file`/`--accounts-file` para testes), extrai agentes instalados, janelas 5h/semanal, buckets e status `unavailable` sem PII; com fallback `curl` quando o Orca não estiver disponível |
+| `tests/fixtures/agent-installed.json` | Fixture sem PII baseada na saída real de `orca agent installed --worktree active --json` |
+| `tests/fixtures/account-list.json` | Fixture sem PII baseada na saída real de `orca account list --json` (janelas 5h/semanal de `claude` e `codex`, `antigravity` com `buckets[]`, e provedores `unavailable`) |
+| `tests/test-orchestration-auto.sh` | Suíte TDD em **bash puro** (sem `bats`, `jq`, `python` ou PowerShell): valida sintaxe, extração sobre fixtures (um assert por comportamento), ausência de PII/segredos, contrato de `SKILL.md`, integridade dos presets, `README.md` da skill e `README.md` raiz nos 5 destinos |
+| `README.md` (raiz) | Adicionar `orca-superpowers-orchestration-auto` à tabela `## Skills` e atualizar o bloco de instalação cobrindo as 4 skills e os **5 destinos** em macOS/Linux/Git Bash (`$HOME/...`) e alternativa PowerShell |
 
 ---
 
-## 3. Contrato Operacional no Orca ADE
+## 3. Contrato Operacional no Orca ADE e Decisão de Abertura de Agente
 
-Idêntico ao contrato duro das demais skills da família, portátil entre Windows, macOS e Linux:
+### Decisão de comando de abertura de agente
 
-1. **Papel estrito do Orquestrador:** atua apenas como hub supervisor, medidor de cota e despachante. Nunca escreve código de produção, especificações, planos ou executa a suíte de testes do projeto-alvo.
+- **Caminho principal:** `orca agent launch --agent <id> --worktree active [--model <id> [--effort <level>]] --surface terminal --focus --json` — escolhido em uma linha por ser **nativamente agent-agnostic** (recebe qualquer `id` retornado por `orca agent installed`), eliminar mapeamento hardcoded de flags por CLI e manter o mesmo contrato de TUI interativa do repositório.
+- **Regra do Orca CLI para `--effort`:** `--effort` exige `--model`. Quando o papel usar `model: null` (default do agente), omitir **ambos** `--model` e `--effort`.
+- **Alternativa documentada:** `orca terminal create --worktree active --title "<titulo>" --focus --command "<CLI>" --json` permanece documentado apenas se o usuário precisar passar flags específicas de CLI não expostas pelo `orca agent launch`.
+
+### Contrato duro (idêntico às demais skills da família)
+
+1. **Papel estrito do Orquestrador:** atua apenas como hub supervisor, coletor de cota e despachante. Nunca escreve código de produção, especificações, planos nem executa a suíte de testes do projeto-alvo.
 2. **Worktree único:** todos os despachos usam `--worktree active`. Nunca criar worktrees separados por etapa.
 3. **TUI interativa 100% obrigatória:**
    ```bash
-   orca terminal create --worktree active --title "<titulo>" --focus --command "<CLI_COM_MODELO>" --json
+   orca agent launch --agent <id> --worktree active [--model <model> [--effort <effort>]] --surface terminal --focus --json
    orca terminal wait --terminal <handle> --for tui-idle --timeout-ms 120000 --json
-   # Se satisfied: false -> repetir wait UMA vez com timeout maior (ex.: 180000); ainda false -> PARAR e avisar o usuário
+   # satisfied: false -> repetir wait UMA vez com timeout maior (ex.: 180000); ainda false -> PARAR e avisar o usuário
    orca terminal send --terminal <handle> --text "<PROMPT>" --enter --json
    ```
    **Proibido** qualquer fallback para modo não-interativo (`-p`, `--print`, `exec`, `run`).
@@ -60,198 +69,131 @@ Idêntico ao contrato duro das demais skills da família, portátil entre Window
    orca terminal send --terminal <ORQ_HANDLE> --text "ETAPA <planner|executor|reviewer> CONCLUÍDA | status: <OK|FALHA> | resumo: <3 frases> | plano: <caminho-ou->" --enter --json
    ```
    Ausência de aviso nunca conta como conclusão; sem aviso em 10 minutos, ler o terminal do agente (`orca terminal read --terminal <handle> --limit 50 --json`) antes de decidir.
-6. **Envio seguro de prompts longos:** evitar aspas duplas não escapadas dentro de `--text`; para prompts extensos, gravar em diretório temporário portátil do SO (`tempfile.gettempdir()` / `$TMPDIR`) e enviar instrução curta sem aspas internas no `--text`.
+6. **Envio seguro de prompts longos:** evitar aspas duplas não escapadas dentro de `--text`; para prompts longos, gravar em `${TMPDIR:-/tmp}/orca-prompt-<etapa>.md` e enviar instrução curta sem aspas internas no `--text`.
 
 ---
 
-## 4. Matriz de Invocação das CLIs e Resolução Portátil
+## 4. Descoberta Dinâmica de Agentes e Modelos (Agent-Agnostic)
 
-### Descoberta de binários no `PATH`
+### 4.1 Agentes instalados (fonte de verdade)
 
-- Dentro de `get_quotas.py`: `shutil.which("<cli>")` (funciona em Windows, macOS e Linux).
-- Em terminal interativo, quando o orquestrador precisar checar disponibilidade:
-  - **macOS / Linux:** `command -v claude codex agy opencode`
-  - **Windows (PowerShell):** `Get-Command claude, codex, agy, opencode -ErrorAction SilentlyContinue`
-
-### Matriz de invocação interativa
-
-| Agente (`agent`) | CLI | Comando interativo base | Flags de modelo e esforço |
-|---|---|---|---|
-| `claude` | `claude` | `claude --dangerously-skip-permissions` | `--model <model>` e `--effort <low\|medium\|high>` |
-| `codex` | `codex` | `codex --dangerously-bypass-approvals-and-sandbox` | `-m <model>` (omitir quando `model: null` para usar default de `~/.codex/config.toml`) e `-c model_reasoning_effort="<effort>"` |
-| `agy` | `agy` | `agy --dangerously-skip-permissions` | `--model <model>` e `--effort <low\|medium\|high\|xhigh\|max>` (quando aplicável além do sufixo do modelo) |
-| `opencode` | `opencode` | `opencode` | Seleção de modelo conforme `opencode models` / configuração da sessão |
-
-### Modelos reais disponíveis (usados nos presets e exemplos)
-
-Obtidos via `agy models`, `~/.claude/settings.json`, `~/.codex/config.toml` e `opencode models`:
-
-- **Antigravity (`agy`):**
-  - Família Gemini 4 Neon: `gemini-4-neon-low`, `gemini-4-neon-medium`, `gemini-4-neon-high`, `gemini-4-neon-xhigh`
-  - Família Gemini 4 Carbon: `gemini-4-carbon-low`, `gemini-4-carbon-medium`, `gemini-4-carbon-high`
-  - Família Gemini 4 Argon: `gemini-4-argon-low`, `gemini-4-argon-medium`, `gemini-4-argon-high`
-  - Família Gemini 4 Hydrogen: `gemini-4-hydrogen-low`, `gemini-4-hydrogen-medium`, `gemini-4-hydrogen-high`, `gemini-4-hydrogen-xhigh`
-  - Orquestradores: `gemini-pro-orchestrator-neon`, `gemini-pro-orchestrator`, `gemini-pro-orchestrator-argon`
-  - Flash: `gemini-3.8-flash-low`, `gemini-3.8-flash-medium`, `gemini-3.8-flash-high`
-  - Via Antigravity: `claude-opus-5-5-{low,medium,high}`, `claude-sonnet-5-5-{low,medium,high}`, `gpt-oss-120b-medium`
-- **Claude Code (`claude`):** `claude-opus-5-5`, `claude-sonnet-5-5`, `haiku`
-- **Codex (`codex`):** `null` (usa o default de `~/.codex/config.toml`, ex.: `gpt-6.2-sol`) ou nome explícito configurado
-- **OpenCode (`opencode`):** modelos descobertos por `opencode models` (ex.: `opencode/deepseek-v4.1-flash-free`, `opencode/nemotron-3.5-super-vl-free`)
-
-> **Nota sobre `readOnly: true`:** nos papéis de revisão, `readOnly: true` é garantia de contrato do papel (o Reviewer não altera código de produção, apenas roda a suíte de testes e grava o relatório em `docs/superpowers/reviews/`) e impede fallback para papel com `readOnly: false`.
-
----
-
-## 5. Medição Real de Cotas (Cross-Platform)
-
-Antes de resolver papéis (no Passo 0 e revalidando antes do Executor no Passo 3 e do Reviewer no Passo 4), o orquestrador executa o mesmo comando em **Windows, macOS e Linux**:
+Em tempo de execução (Passo 0), o orquestrador descobre os agentes disponíveis rodando `bash <caminho-da-skill>/scripts/get-quotas.sh`, que consulta:
 
 ```bash
-python3 <caminho-da-skill>/scripts/get_quotas.py
+orca agent installed --worktree active --json
 ```
 
-*(Caso o ambiente exponha apenas `python` apontando para Python 3, usar `python <caminho-da-skill>/scripts/get_quotas.py`.)*
+Exemplo real (sem PII): `claude` (default), `codex`, `opencode`, `opencode2`, `antigravity`, `copilot`.
 
-Todos os caminhos de arquivos são resolvidos via `pathlib.Path.home()` (`~`) e variáveis de ambiente padrão (`$HOME`, `CLAUDE_OAUTH_TOKEN`, `CODEX_HOME`), sem separadores `\` fixos nem caminhos Windows-only.
+Regras rígidas de portabilidade entre agentes:
+- Nunca fixar uma lista fechada de 4 CLIs.
+- Cada `id` retornado por `orca agent installed` é um candidato válido para `orca agent launch --agent <id>`.
+- Agente listado em preset mas **ausente** de `orca agent installed` não pode ser despachado; o resolvedor tenta o `fallback` ou o próximo agente instalado compatível.
+- Agente instalado que nenhum papel referencia simplesmente fica fora do roteamento (sem erro).
+- Nunca inventar `id` de agente nem `id` de modelo.
 
-### 5.1 Fontes de Cota e Matriz de Suporte por SO
+### 4.2 Descoberta de modelos por agente
 
-| Provedor | Windows | macOS | Linux | Comportamento quando indisponível |
-|---|---|---|---|---|
-| `claude` | `CLAUDE_OAUTH_TOKEN` ou `~/.claude/.credentials.json` | `CLAUDE_OAUTH_TOKEN`, `~/.claude/.credentials.json` ou Keychain (`security`) | `CLAUDE_OAUTH_TOKEN` ou `~/.claude/.credentials.json` | `status: "no_auth"\|"unavailable"`, **não crítico** |
-| `codex` | `$CODEX_HOME/auth.json` ou `~/.codex/auth.json` | `$CODEX_HOME/auth.json` ou `~/.codex/auth.json` | `$CODEX_HOME/auth.json` ou `~/.codex/auth.json` | `status: "no_auth"\|"unavailable"`, **não crítico** |
-| `agy` | Credential Manager (`gemini:antigravity` via `ctypes` `CredReadW`) | Keychain (`security find-generic-password -s gemini -a antigravity -w`) | Secret Service (`secret-tool lookup service gemini username antigravity`; **sem leitura** em ambientes sem `secret-tool`/sessão D-Bus) | `status: "no_cli"\|"no_auth"\|"unavailable"`, **não crítico** |
-| `opencode` | Sem API de cota | Sem API de cota | Sem API de cota | Sempre `status: "unavailable"` (`no_quota_api`), **não crítico** |
+O Orca não possui um comando único de listagem de modelos para todos os agentes; a descoberta é por agente quando o CLI expõe listagem:
 
-#### 1. Claude (`claude`)
-- **Descoberta do token (somente leitura):**
-  1. Variável de ambiente `CLAUDE_OAUTH_TOKEN`.
-  2. Arquivo `~/.claude/.credentials.json` → `claudeAiOauth.accessToken` (até 3 tentativas com intervalo de 80 ms para tolerar escrita concorrente do CLI).
-  3. No macOS (`sys.platform == "darwin"`), fallback opcional via `security find-generic-password -s "Claude Code-credentials" -w` (extrai `claudeAiOauth.accessToken` se JSON, senão string direta).
-- **Requisição HTTP:**
-  - `GET https://api.anthropic.com/api/oauth/usage`
-  - Headers: `Authorization: Bearer <token>`, `anthropic-beta: oauth-2025-04-20`
-  - Timeout: 10 s.
-- **Extração e normalização:**
-  - `windows["5h"]` = `five_hour.utilization` (`resets_at`)
-  - `windows["week"]` = `seven_day.utilization` (`resets_at`)
-  - `windows["opus"]` = `seven_day_opus.utilization` (`resets_at`); se `seven_day_opus` for nulo/ausente, extrair de `limits[]` o item com `kind == "weekly_scoped"`, `scope.surface == null` e `scope.model.display_name` igual a `"opus"` (case-insensitive), campo `percent`.
-  - Demais itens `weekly_scoped` sem `scope.surface` entram em `windows[<display_name_lowercase>]`.
-  - `worst` = janela de maior utilização; `used = round(worst.used)`; `rateLimited = false`.
+- **Antigravity (`antigravity`):** `agy models` — modelos reais verificados nesta máquina (usados nos exemplos/presets):
+  - `gemini-4-neon-{low,medium,high,xhigh}`
+  - `gemini-4-carbon-{low,medium,high}`
+  - `gemini-4-argon-{low,medium,high}`
+  - `gemini-4-hydrogen-{low,medium,high,xhigh}`
+  - `gemini-pro-orchestrator`, `gemini-pro-orchestrator-neon`, `gemini-pro-orchestrator-argon`
+  - `gemini-3.8-flash-{low,medium,high}`
+  - `claude-opus-5-5-{low,medium,high}`, `claude-sonnet-5-5-{low,medium,high}`, `gpt-oss-120b-medium`
+- **Claude (`claude`):** aliases/modelos configurados (ex.: `claude-sonnet-5-5`, `claude-opus-5-5`, `haiku`, ou `null` para default).
+- **Codex (`codex`), OpenCode (`opencode`, `opencode2`), Copilot (`copilot`) e demais agentes sem lista explícita:** usar `model: null` (default configurado no agente, omitindo `--model` e `--effort` no `orca agent launch`).
 
-#### 2. Codex (`codex`)
-- **Descoberta do token (somente leitura — nunca rotacionar refresh token):**
-  - `$CODEX_HOME/auth.json` (se `CODEX_HOME` estiver definida e não vazia) ou `~/.codex/auth.json` → `tokens.access_token` e opcional `tokens.account_id`.
-  - Login via `OPENAI_API_KEY` sem `tokens.access_token` → `status: "no_auth"`.
-- **Requisição HTTP:**
-  - `GET https://chatgpt.com/backend-api/wham/usage`
-  - Headers: `Authorization: Bearer <token>`, `User-Agent: orca-quota-check/1.0`, e `ChatGPT-Account-Id: <account_id>` quando presente.
-  - Timeout: 10 s.
-- **Extração e normalização:**
-  - `primary` = `rate_limit.primary_window` (`used_percent`, `limit_window_seconds / 60`, `reset_at * 1000`).
-  - `secondary` = `rate_limit.secondary_window`.
-  - **Normalização por duração (`by_duration`):** planos com cota exclusivamente semanal (ex.: Pro Lite) enviam a janela semanal em `primary_window`. Se `primary.window_minutes > 1440` e `secondary.window_minutes <= 1440`, inverter `(primary, secondary)` para que `windows["5h"]` seja sempre a janela curta e `windows["week"]` seja sempre a semanal.
-  - `plan = plan_type`, `rateLimited = bool(rate_limit.limit_reached)`.
-  - `worst` = maior entre `5h` e `week`; `used = round(worst.used)`; `resetsAt` em ISO-8601 UTC (`null` se epoch 0).
-  - **Fallback em HTTP 401 (documentado):** retorna `status: "no_auth"` por padrão (documentado também o mecanismo de renovação segura via `codex app-server` `account/rateLimits/read` quando necessário).
+---
 
-#### 3. Antigravity / Gemini (`agy`)
-- **Descoberta do binário e token (somente leitura):**
-  - Verifica `shutil.which("agy")`; ausente → `status: "no_cli"`.
-  - Leitura do envelope JSON do keyring nativo (campo `token.access_token`):
-    - **Windows:** `ctypes.windll.advapi32.CredReadW` (`CRED_TYPE_GENERIC = 1`) com target literal `"gemini:antigravity"`.
-    - **macOS:** `security find-generic-password -s gemini -a antigravity -w` (se `security` disponível).
-    - **Linux:** `secret-tool lookup service gemini username antigravity` (se `secret-tool` instalado e sessão Secret Service ativa; em Linux headless ou sem `secret-tool`, **não há leitura disponível** → retorna `status: "no_auth"` e a regra trata `agy` como não crítico).
-- **Requisição HTTP:**
-  - `POST https://daily-cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels`
-  - Body JSON: `{}`
-  - Headers: `Authorization: Bearer <token>`, `Content-Type: application/json`, `User-Agent: orca-quota-check/1.0 antigravity-usage` (**obrigatório conter `antigravity` no `User-Agent`**; sem ele o endpoint responde HTTP 403 Forbidden — verificado empiricamente).
-  - Timeout: 10 s.
-  - Em HTTP 401: executar `agy models` uma única vez (timeout 12 s) para renovar o segredo no keyring, reler o token e repetir o `POST` uma vez.
-- **Extração e normalização (espelhando `antigravity_usage.rs`):**
-  - Percorrer `body.models.*` com `quotaInfo.remainingFraction` numérico.
-  - `normalized = max(0.0, min(1.0, remainingFraction))`; `fractionKey = round(normalized * 1_000_000)`.
-  - Agrupar modelos por chave `(fractionKey, resetTime)` em buckets.
-  - Rótulo do bucket: `"Gemini"` se todos os modelos contêm `gemini`, `"Claude"` se todos contêm `claude`, `"GPT"` se todos contêm `gpt`, caso contrário o primeiro `displayName` ordenado.
-  - `remainingPercent = fractionKey / 10000.0`; `usedPercent = max(0.0, min(100.0, 100.0 - remainingPercent))`.
-  - Ordenar buckets por `usedPercent` decrescente, desempate por `label` crescente.
-  - `worst` = rótulo do bucket mais consumido; `used = round(maxUsed)`; `resetsAt` = `resetTime` do pior bucket; `rateLimited = (maxUsed >= 99.9)`.
-  - `windows` expõe cada bucket por rótulo (ex.: `"Gemini"`, `"Claude"`) e o agregado `"short"` igual a `maxUsed` para interoperabilidade com gates genéricos.
+## 5. Medição Real de Cotas (Bash / Git Bash)
 
-#### 4. Provedores sem leitura de cota (`opencode` e estados de erro)
-- **`opencode`:** não possui API de cota por janela; sempre retorna `status: "unavailable"`, `reason: "no_quota_api"`, `used: null`, `rateLimited: false`, `windows: {}`.
-- **Qualquer falha ou SO sem backend de credencial** (`no_cli`, `no_auth`, `unavailable`) retorna `status != "ready"`, `used: null`, `rateLimited: false`, `windows: {}` e `reason` descritivo (sem segredos).
-- **Regra inegociável:** provedor sem leitura (`status != "ready"`) **nunca é considerado crítico** e **nunca falha um `QuotaGate`**.
+### 5.1 Invocação por SO
 
-### 5.2 Contrato de Saída JSON (`get_quotas.py`)
+- **macOS / Linux / Windows (Git Bash no `PATH`):**
+  ```bash
+  bash <caminho-da-skill>/scripts/get-quotas.sh
+  ```
+- **Windows (quando `bash` não estiver no `PATH`):**
+  ```text
+  "C:\Program Files\Git\bin\bash.exe" <caminho-da-skill>/scripts/get-quotas.sh
+  ```
 
-```json
-{
-  "collectedAt": "2026-11-24T23:55:00Z",
-  "platform": "win32",
-  "providers": {
-    "claude": {
-      "status": "ready",
-      "worst": "week",
-      "used": 66,
-      "resetsAt": "2026-11-30T01:59:59Z",
-      "rateLimited": false,
-      "windows": { "5h": 5.0, "week": 66.0, "opus": 0.0 }
-    },
-    "codex": {
-      "status": "ready",
-      "plan": "plus",
-      "worst": "week",
-      "used": 74,
-      "resetsAt": "2026-11-30T12:00:00Z",
-      "rateLimited": false,
-      "windows": { "5h": 0.0, "week": 74.0 }
-    },
-    "agy": {
-      "status": "ready",
-      "worst": "Gemini",
-      "used": 6,
-      "resetsAt": "2026-11-25T05:48:14Z",
-      "rateLimited": false,
-      "windows": { "Gemini": 6.5, "short": 6.5 },
-      "buckets": [
-        {
-          "label": "Gemini",
-          "usedPercent": 6.5,
-          "remainingPercent": 93.5,
-          "resetsAt": "2026-11-25T05:48:14Z",
-          "models": ["Gemini 3 Flash"]
-        }
-      ]
-    },
-    "opencode": {
-      "status": "unavailable",
-      "reason": "no_quota_api",
-      "worst": null,
-      "used": null,
-      "resetsAt": null,
-      "rateLimited": false,
-      "windows": {}
-    }
-  }
-}
+### 5.2 Fonte Principal: `orca account list --json` (`result.rateLimits`)
+
+Cross-platform, agent-agnostic e já normalizada pelo Orca ADE. O comando retorna:
+- `accounts[]` e `activeAccountId` por agente configurado (contas conectadas);
+- `result.rateLimits.<provider>` com `{ provider, session{usedPercent, windowMinutes, resetsAt, resetDescription}, weekly{...}, monthly, status: "ok"|"unavailable", error, planType }`;
+- `result.rateLimits.antigravity.buckets[]` com grupos (`Gemini Models`, `Claude and GPT models`), `windowName`, `usedPercent`, `windowMinutes` (`300` = 5h, `10080` = semanal) e `resetsAt`;
+- `inactiveClaudeAccounts[]` / `inactiveCodexAccounts[]` (quando houver contas secundárias configuradas com `rateLimits` próprios).
+
+Chaves observadas em `result.rateLimits`: `claude`, `codex`, `antigravity`, `gemini`, `kimi`, `grok`, `cursor`, `muse`, `minimax`, `zcode`, `opencodeGo` (e qualquer novo provedor que o Orca passar a expor — o parser lê dinamicamente todas as chaves sob `rateLimits`).
+
+Mapeamento de `agent.id` ↔ chave em `rateLimits`:
+- Match exato primeiro (`claude` ↔ `claude`, `codex` ↔ `codex`, `antigravity` ↔ `antigravity`, `gemini` ↔ `gemini`, `kimi` ↔ `kimi`, `cursor` ↔ `cursor`, etc.).
+- Alias conhecido: `opencode` / `opencode2` ↔ `opencodeGo`.
+- Agente instalado sem entrada em `rateLimits` (ex.: `copilot`) ou com `status: "unavailable"` → **sem leitura → nunca é crítico**.
+
+### 5.3 Formato de Saída de `scripts/get-quotas.sh` (Parseável sem `jq` e Sem PII)
+
+O script usa exclusivamente `awk`, `sed`, `grep`, `tr` e `cut` (compatível com BSD `awk` no macOS e GNU `awk` no Linux/Git Bash) e **descarta todos os campos pessoais** (`email`, `organizationUuid`, `organizationName`, `home`, `providerAccountId`). Saída normalizada por linha:
+
+```text
+SOURCE|orca
+INSTALLED|claude|default
+INSTALLED|codex|
+INSTALLED|opencode|
+INSTALLED|opencode2|
+INSTALLED|antigravity|
+INSTALLED|copilot|
+QUOTA|claude|ok|5|66|weekly|66|pro
+QUOTA|codex|ok|0|74|weekly|74|plus
+QUOTA|antigravity|ok|12|6|session|12|-
+BUCKET|antigravity|Gemini Models|10080|6
+BUCKET|antigravity|Gemini Models|300|12
+BUCKET|antigravity|Claude and GPT models|10080|0
+BUCKET|antigravity|Claude and GPT models|300|0
+QUOTA|gemini|unavailable|-|-|-|-|-
+QUOTA|kimi|unavailable|-|-|-|-|-
+QUOTA|opencodeGo|unavailable|-|-|-|-|-
 ```
 
-### 5.3 Invariante de Segurança
+Legenda dos campos de `QUOTA`: `QUOTA|<provider>|<status>|<session_pct_5h>|<weekly_pct>|<worst_window>|<worst_pct>|<planType>`.
+Legenda de `BUCKET`: `BUCKET|<provider>|<group>|<windowMinutes>|<usedPercent>`.
 
-`get_quotas.py` e a skill **jamais** imprimem, registram em log ou gravam em relatórios qualquer token (`accessToken`, `access_token`, `refresh_token`, `Authorization`, `CLAUDE_OAUTH_TOKEN`, segredo bruto do keyring). Mensagens de erro incluem apenas código HTTP ou categoria (`no_cli`, `no_auth`, `http_401`, `http_403`, `timeout`, `parse_error`).
+Flags opcionais de teste offline no script:
+- `--agents-file <caminho.json>`: lê a saída de `orca agent installed` de arquivo (fixture).
+- `--accounts-file <caminho.json>`: lê a saída de `orca account list` de arquivo (fixture).
+
+### 5.4 Fallback Documentado via `curl` (Quando o Orca Não Estiver Disponível)
+
+Quando `orca` não estiver no `PATH` ou `orca account list --json` falhar (sem `--accounts-file`), a skill documenta (e o script pode acionar com `SOURCE|direct-curl`) o fallback direto com `curl` + caminhos `$HOME` portáteis (nunca `%APPDATA%` nem `\`):
+
+- **Claude:** token de `$CLAUDE_OAUTH_TOKEN` ou `$HOME/.claude/.credentials.json` (`claudeAiOauth.accessToken`) →
+  `curl -sfS --max-time 10 -H "Authorization: Bearer $TOKEN" -H "anthropic-beta: oauth-2025-04-20" "https://api.anthropic.com/api/oauth/usage"` (`five_hour`, `seven_day`, `seven_day_opus`).
+- **Codex:** token e opcional `account_id` de `${CODEX_HOME:-$HOME/.codex}/auth.json` (`tokens.access_token`, `tokens.account_id`) →
+  `curl -sfS --max-time 10 -H "Authorization: Bearer $TOKEN" -H "User-Agent: orca-quota-check/1.0" [-H "ChatGPT-Account-Id: $ACC"] "https://chatgpt.com/backend-api/wham/usage"` (`primary_window` / `secondary_window`, `used_percent`, `limit_reached`; swap de janela quando `primary` > 1440 min).
+- **Antigravity:** `POST https://daily-cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels` com body `{}` e `User-Agent` contendo `antigravity` (lendo `token.access_token` do keyring do SO: `security` no macOS, `secret-tool` no Linux; no Windows sem Orca não há leitura direta em bash puro → degrada para `status: unavailable` = não crítico).
+- **Demais provedores sem leitura direta:** `QUOTA|<provider>|unavailable|-|-|-|-|-` (**nunca críticos**).
+
+### 5.5 Invariante de Segurança e Privacidade (Zero PII / Zero Tokens)
+
+`get-quotas.sh`, fixtures, exemplos na skill e trilha de auditoria **jamais** incluem e-mails, `organizationUuid`, caminhos `home` de conta ou tokens (`accessToken`, `access_token`, `refresh_token`, `Authorization`, `CLAUDE_OAUTH_TOKEN`).
 
 ---
 
 ## 6. Motor Determinístico de Roteamento
 
-Inspirado diretamente em `orchestrator_core.rs`, `routingPresets.ts` e `agentFitness.ts` do Alethe, adaptado ao ciclo Orca ADE.
+Inspirado em `orchestrator_core.rs`, `routingPresets.ts` e `agentFitness.ts` do Alethe, estendido para ser **agent-agnostic** sobre `INSTALLED_AGENTS` e `QUOTA`/`BUCKET` do Orca.
 
 ### 6.1 Modelo de Dados
 
 - **`kind`** (6 valores fixos): `research | code | review | command | docs | scrap`
 - **`effortClass`** (3 valores fixos): `light | standard | deep`
-- **`Role`**:
+- **`Role`** (baseado em `agent` = `id` do Orca):
   ```json
   {
     "name": "builder",
@@ -266,145 +208,123 @@ Inspirado diretamente em `orchestrator_core.rs`, `routingPresets.ts` e `agentFit
   ```
 - **`QuotaGate`**:
   ```json
-  { "agent": "claude", "window": "opus", "below": 50 }
+  { "agent": "claude", "window": "week", "below": 75 }
   ```
   Mapeamento de `window`:
-  - `"short"` → `"5h"` (em `claude` e `codex`) ou `"short"` (em `agy`)
-  - `"week"` → `"week"`
-  - `"opus"` → `"opus"` em `claude`; em `codex` (sem janela Opus), mapeia para `"week"`
-  - Qualquer outro rótulo (ex.: `"Gemini"`, `"Claude"` em `agy`) → busca exata em `windows[window]`
-- **`RoutingRule`**:
-  ```json
-  {
-    "id": "bal-deep-opus",
-    "enabled": true,
-    "kinds": ["code", "research", "command"],
-    "efforts": ["deep"],
-    "gates": [
-      { "agent": "claude", "window": "opus", "below": 50 },
-      { "agent": "claude", "window": "week", "below": 75 }
-    ],
-    "role": "expert"
-  }
-  ```
+  - `"short"` → `session` (5h)
+  - `"week"` → `weekly` (7d)
+  - `"opus"` → janela Opus do `claude` (no Orca `fableWeekly`/fallback `weekly`; no `curl` direto `seven_day_opus`); em outros provedores mapeia para `weekly`
+  - Nome de grupo de bucket (ex.: `"Gemini Models"`, `"Claude and GPT models"` no `antigravity`) → maior `usedPercent` entre os buckets daquele grupo
+- **`RoutingRule`**: `{ id, enabled, kinds[], efforts[], gates[], role }`
 - **`RoutingSettings`**:
   - `preset`: `"economy" | "balanced" | "performance" | "custom"` (padrão: **`"balanced"`**)
-  - `criticalThreshold`: número `0..100` (padrão: **`80`**)
+  - `criticalThreshold`: `0..100` (padrão: **`80`**)
   - `allowOpusOnDeep`: booleano (padrão: **`true`**)
-  - `onAllCritical` (alias compatível: `onBothCritical`): `"run-cheapest" | "ask" | "block"` (padrão na skill auto: **`"run-cheapest"`**, mantendo o gate do plano como única pergunta no fluxo padrão; configurável para `"ask"` ou `"block"`)
+  - `onBothCritical`: `"run-cheapest" | "ask" | "block"` (padrão na skill auto: **`"run-cheapest"`**, mantendo o gate do plano como única pergunta no fluxo padrão; configurável para `"ask"` ou `"block"`)
 
 ### 6.2 Classificação da Tarefa e Mapeamento para o Ciclo de 3 Etapas
 
-No Passo 0, o orquestrador classifica o requisito em `effortClass` por critério objetivo:
-
 | `effortClass` | Critério objetivo |
 |---|---|
-| `light` | Ajuste localizado em 1–2 arquivos, correção pontual, documentação/README simples ou tarefa mecânica sem mudança arquitetural |
+| `light` | Ajuste localizado em 1–2 arquivos, correção pontual, documentação simples ou tarefa mecânica sem mudança arquitetural |
 | `standard` | Nova feature ou refatoração localizada em múltiplos arquivos/módulos com TDD, seguindo padrões existentes do repo |
 | `deep` | Decisão arquitetural, novo protocolo/motor, concorrência, segurança, migração crítica ou mudança transversal em vários subsistemas |
 
-Cada etapa do ciclo invoca o resolvedor com seu `kind` fixo e o `effortClass` do requisito:
-
-1. **Planner:** `kind = "docs"` (se requisito for puramente documental/markdown sem lógica) ou `kind = "research"` (padrão) + `effortClass` da tarefa.
-2. **Executor:** `kind = "docs"` (se entrega for apenas documentação) ou `kind = "code"` (padrão; `"command"` se for automação/CLI pura) + `effortClass` da tarefa.
+Mapeamento das etapas do ciclo:
+1. **Planner:** `kind = "docs"` (se puramente documental) ou `kind = "research"` (padrão) + `effortClass` da tarefa.
+2. **Executor:** `kind = "docs"` (se entrega documental) ou `kind = "code"` (padrão; `"command"` para automação CLI pura) + `effortClass` da tarefa.
 3. **Reviewer:** `kind = "review"` + `effortClass` da tarefa.
 
-### 6.3 Algoritmo de Resolução (Passo a Passo Determinístico)
+### 6.3 Algoritmo de Resolução (Determinístico e Agent-Agnostic)
 
 Para cada etapa `(kind, effortClass)`:
 
 1. **Avaliação de regras (de cima para baixo):**
    - Ignorar regra com `enabled == false`.
-   - `kinds` deve ser vazio **ou** conter `kind`.
-   - `efforts` deve ser vazio **ou** conter `effortClass` (se `effortClass` for nulo, só casa regra com `efforts` vazio).
+   - `kinds` vazio **ou** contém `kind`.
+   - `efforts` vazio **ou** contém `effortClass` (se `effortClass` for nulo, só casa regra com `efforts` vazio).
    - **Todos** os `gates` devem passar (`gate_passes`):
-     - Se `providers[gate.agent]` ausente ou `status != "ready"` → **passa (`true`)**.
-     - Buscar `used` em `windows[mappedWindow]` (ou `snapshot.used` se `snapshot.worst == mappedWindow`).
-     - Se `used` ausente/nulo → **passa (`true`)**.
-     - Caso contrário → passa se e somente se `used < gate.below`.
-   - Resolver `role` em `roles`: preferir linha com `role.orchestrator == agenteAtualDoOrquestrador`; caso contrário, linha com `role.orchestrator == null`. Se não existir, pular regra.
-   - Se `allowOpusOnDeep == false` e o papel usar modelo Opus (`model` contém `"opus"`, case-insensitive), pular regra.
-   - **Primeira regra que passar vence.** Registrar `rule:<id>` e `role:<name>`.
+     - Se `QUOTA` do `gate.agent` ausente ou `status != "ok"` → **passa (`true`)** (provedor sem leitura nunca segura trabalho).
+     - Se a janela nomeada for nula/`-` → **passa (`true`)**.
+     - Caso contrário → passa se e somente se `usedPercent < gate.below`.
+   - Resolver `role` em `roles` (preferindo `role.orchestrator == agenteAtualDoOrquestrador`, senão `role.orchestrator == null`).
+   - Se `allowOpusOnDeep == false` e `role.model` contém `"opus"` (case-insensitive), pular regra.
+   - **Checagem de instalação (`INSTALLED_AGENTS`):** se `role.agent` estiver em `INSTALLED_AGENTS`, **a regra vence** (`rule:<id>`, `role:<name>`). Se `role.agent` **não** estiver instalado, testar `role.fallback` (se instalado e mantendo `readOnly`); se nenhum estiver instalado, continuar para a próxima regra. Se nenhuma regra tiver agente instalado, escolher o primeiro agente de `INSTALLED_AGENTS` (priorizando o marcado `default`) e registrar `fallback: <role> → <agent-instalado> (agente não instalado)`.
 
-2. **Checagem de limiar crítico e Fallback (máximo 1 nível):**
-   - Um provedor é **crítico** (`past_threshold`) se e somente se `status == "ready"` **E** (`rateLimited == true` **OU** `used >= criticalThreshold`).
-   - Se o provedor do papel escolhido **não** for crítico → manter papel escolhido.
-   - Se for crítico **E** `role.fallback` estiver definido:
-     - Localizar papel de fallback (mesma precedência de `orchestrator`, com `fallback.name != role.name`).
-     - **Guarda `readOnly`:** se `role.readOnly == true` e `fallback.readOnly == false`, **não** aplicar fallback (proibido elevar leitura para escrita).
-     - Se o provedor do fallback **não** for crítico → trocar para o fallback e registrar `fallback: <role> → <fallback> por cota (<agent> <worst>=<used>%)`.
-     - Nunca encadear segundo nível (`fallback.fallback` é ignorado).
+2. **Checagem de limiar crítico e Fallback de 1 nível:**
+   - Um provedor é **crítico** se e somente se `status == "ok"` **E** (`worst_pct >= criticalThreshold` **OU** `rateLimited == true`). Provedor `unavailable` ou ausente **não é crítico**.
+   - Se o provedor do papel escolhido não for crítico → manter.
+   - Se for crítico:
+     - Tentar `role.fallback` (1 nível apenas; proibido elevar `readOnly: true` → `readOnly: false`).
+     - Se `role.fallback` estiver em `INSTALLED_AGENTS` e não for crítico → trocar e registrar `fallback: <role> → <fallback> por cota (<agent> <worst>=<pct>%)`.
+     - Se `role.fallback` **não** estiver instalado (ou ausente), procurar o próximo agente em `INSTALLED_AGENTS` não crítico que sirva ao papel (sem `model` hardcoded se não houver papel para ele, preservando `readOnly` no Reviewer) e registrar `fallback: <role> → <agent-instalado> (fallback <fallback> não instalado)`.
 
 3. **Independência de vendor no Reviewer (Passo 4):**
-   - Se, após os passos 1–2, o `agent` resolvido para o Reviewer for igual ao `agent` que executou o Executor **E** o papel do Reviewer tiver `fallback` com `readOnly == true`, `agent != executor.agent` e provedor não crítico → aplicar esse fallback e registrar `vendor-independence: <role> → <fallback> (Executor usou <agent>)`.
+   - Se o `agent` resolvido para o Reviewer for igual ao `agent` que executou o Executor, tentar `role.fallback` (se `readOnly: true`, instalado e não crítico) ou outro agente instalado diferente do Executor e registrar `vendor-independence: <role> → <destino> (Executor usou <agent>)`.
 
-4. **Todos os provedores medidos críticos (`onAllCritical` / `onBothCritical`):**
-   - Considerar o conjunto `M` dos provedores com `status == "ready"` presentes nos papéis do preset (tipicamente `claude`, `codex`, `agy`).
-   - Se `M` não é vazio **E** todo provedor em `M` está crítico (`past_threshold == true`):
-     - `"run-cheapest"`: selecionar o papel mais econômico disponível (priorizando `agy` com `gemini-3.8-flash-medium` ou o provedor com menor `used%` entre os medidos, respeitando `readOnly` no Reviewer) e registrar `all-critical: run-cheapest`.
-     - `"ask"`: pausar e perguntar ao usuário se deseja prosseguir mesmo com todos os provedores medidos acima de `criticalThreshold`, mostrando percentuais e `resetsAt`.
-     - `"block"`: interromper imediatamente sem despachar, exibindo percentuais e `resetsAt`, e encerrar com `status: FALHA`.
+4. **Todos os provedores medidos críticos (`onBothCritical`):**
+   - Considerar o conjunto `M` dos provedores com `status == "ok"` dentre os agentes em `INSTALLED_AGENTS`.
+   - Se `M` não é vazio **E** todos em `M` estão críticos (`>= criticalThreshold`):
+     - `"run-cheapest"`: selecionar o papel mais econômico disponível entre os instalados (ou o de menor `worst_pct`, respeitando `readOnly` no Reviewer) e registrar `all-critical: run-cheapest`.
+     - `"ask"`: pausar e perguntar ao usuário se deseja prosseguir apesar das cotas críticas, exibindo percentuais e reset.
+     - `"block"`: interromper sem despachar, exibindo percentuais e reset, e encerrar com `status: FALHA`.
 
-### 6.4 Presets Embutidos (JSON válido e pronto para uso)
+### 6.4 Presets Embutidos (JSON válido, IDs do Orca e Modelos Reais)
 
-A skill traz 3 presets prontos (`economy`, `balanced` [default], `performance`), todos usando modelos reais verificados:
+Os 3 presets (`economy`, `balanced` [default], `performance`) usam IDs de agente do Orca (`claude`, `codex`, `antigravity`), `model: null` + `effort: null` onde o agente usa seu default (`codex`), e modelos reais do Antigravity/Claude verificados na máquina:
 
-- **`economy`**: prioriza `agy` (`gemini-3.8-flash-medium`, `gemini-4-argon-medium`, `gemini-4-carbon-medium`) e `codex` (`low`/`medium`); sem Opus.
+- **`economy`**: prioriza `antigravity` (`gemini-3.8-flash-medium`, `gemini-4-argon-medium`, `gemini-4-carbon-medium`) e `codex` (default); sem Opus.
 - **`balanced` (padrão)**:
-  - `docs`/`scrap`/`research` `light` → `scout` (`agy` `gemini-3.8-flash-high`, `low`, fallback `codex-light`)
-  - `review` → `reviewer-agy` (`agy` `gemini-4-neon-high`, `high`, `readOnly: true`, fallback `codex-reviewer` `readOnly: true`)
-  - `code`/`research`/`command` `deep` com gates `claude.opus < 50` e `claude.week < 75` (e `allowOpusOnDeep: true`) → `expert` (`claude` `claude-opus-5-5`, `high`, fallback `agy-planner`)
-  - `research`/`docs` `standard`/`deep` → `planner-std` (`codex` default, `medium`, fallback `agy-planner` `gemini-4-neon-high`)
-  - `code`/`command` `light` → `codex-builder` (`codex` default, `medium`, fallback `agy-builder`)
+  - `docs`/`scrap`/`research` `light` → `scout` (`antigravity` `gemini-3.8-flash-high`, `low`, fallback `codex-light`)
+  - `review` → `reviewer-antigravity` (`antigravity` `gemini-4-neon-high`, `high`, `readOnly: true`, fallback `codex-reviewer` `readOnly: true`)
+  - `code`/`research`/`command` `deep` com gate `claude.week < 75` e `claude.opus < 50` (e `allowOpusOnDeep: true`) → `expert` (`claude` `claude-opus-5-5`, `high`, fallback `antigravity-planner`)
+  - `research`/`docs` `standard`/`deep` → `planner-std` (`codex`, `model: null`, `effort: null`, fallback `antigravity-planner`)
+  - `code`/`command` `light` → `codex-builder` (`codex`, `model: null`, `effort: null`, fallback `antigravity-builder`)
   - Default → `builder` (`claude` `claude-sonnet-5-5`, `medium`, fallback `codex-builder`)
-- **`performance`**: prioriza `claude-opus-5-5` em `deep` (gate `opus < 80`), `gemini-4-neon-xhigh` em `research`/`review`, `claude-sonnet-5-5` `high` em `code`, com fallbacks em `codex` `high` e `gemini-4-hydrogen-xhigh`.
+- **`performance`**: prioriza `claude-opus-5-5` em `deep` (gate `claude.opus < 80`), `antigravity` `gemini-4-neon-xhigh` em `research`/`review`, `claude-sonnet-5-5` `high` em `code`, com fallbacks em `codex` (default) e `antigravity` `gemini-4-hydrogen-xhigh`.
 
 ---
 
 ## 7. Fluxo Completo e Trilha de Auditoria
 
-1. **Passo 0 — Coleta de Cota, Classificação e Roteamento Inicial:**
+1. **Passo 0 — Coleta Dinâmica, Classificação e Roteamento Inicial:**
    - Resolver `<ORQ_HANDLE>` via `orca terminal show --json`.
-   - Rodar `python3 <caminho-da-skill>/scripts/get_quotas.py` e capturar o snapshot JSON.
-   - Classificar o requisito em `effortClass` (`light | standard | deep`) e resolver os 3 papéis (Planner, Executor, Reviewer) pelo preset ativo (`balanced` por padrão, ou preset/overrides informados no pedido).
+   - Executar `bash <caminho-da-skill>/scripts/get-quotas.sh` para obter `INSTALLED_AGENTS` e `QUOTA`/`BUCKET`.
+   - Classificar o requisito em `effortClass` (`light | standard | deep`) e resolver Planner, Executor e Reviewer pelo preset ativo (`balanced` por padrão), filtrando contra `INSTALLED_AGENTS`.
    - **Sem perguntar sobre agentes/modelos**, exibir resumo compacto da decisão e seguir direto ao Passo 1.
 2. **Passo 1 — Despacho do Planner (TUI obrigatória):**
-   - Abrir terminal `1-Planner` com o comando exato do papel resolvido (`agent` + `model` + `effort`), aguardar `tui-idle` e enviar prompt com `superpowers:brainstorming` + `superpowers:writing-plans` + contrato de notificação.
+   - Abrir com `orca agent launch --agent <id> --worktree active [--model <model> [--effort <effort>]] --surface terminal --focus --json`, aguardar `tui-idle`, injetar prompt `superpowers:brainstorming` + `superpowers:writing-plans` + contrato de notificação.
    - Aguardar `ETAPA planner CONCLUÍDA`.
 3. **Passo 2 — Gate Obrigatório de Aprovação Humana (Única pergunta do fluxo normal):**
-   - Apresentar ao usuário: resumo da arquitetura, tarefas/arquivos impactados e o bloco de **Trilha de Auditoria** do Planner + alocação prevista para Executor e Reviewer.
+   - Apresentar resumo da arquitetura, tarefas/arquivos impactados e o bloco de **Trilha de Auditoria** do Planner + alocação prevista para Executor e Reviewer.
    - Perguntar explicitamente se aprova iniciar a implementação. **Nunca** despachar Executor sem confirmação afirmativa.
 4. **Passo 3 — Despacho do Executor (TUI obrigatória):**
-   - Reexecutar `get_quotas.py` para validar que as cotas não ficaram críticas durante a espera do gate; recalcular o papel do Executor se necessário (registrando eventual mudança na trilha).
-   - Abrir terminal `2-Executor`, aguardar `tui-idle`, injetar prompt `superpowers:executing-plans` com TDD estrito, commits atômicos, marcação `[x]` e aviso ao `<ORQ_HANDLE>`.
-   - Aguardar `ETAPA executor CONCLUÍDA` e confirmar checkboxes `[x]`.
+   - Reexecutar `bash <caminho-da-skill>/scripts/get-quotas.sh` para atualizar cotas após o gate; recalcular o papel do Executor se necessário.
+   - Abrir com `orca agent launch ... --surface terminal --focus --json`, aguardar `tui-idle`, injetar prompt `superpowers:executing-plans` (TDD estrito, commits atômicos, checkboxes `[x]`, aviso ao `<ORQ_HANDLE>`).
+   - Aguardar `ETAPA executor CONCLUÍDA` e conferir `[x]`.
 5. **Passo 4 — Despacho do Reviewer (TUI obrigatória):**
-   - Reexecutar `get_quotas.py`, resolver o papel do Reviewer (aplicando guarda `readOnly` e regra de independência de vendor frente ao Executor real).
-   - Abrir terminal `3-Reviewer`, aguardar `tui-idle`, injetar prompt `superpowers:requesting-code-review` + `superpowers:verification-before-completion` + **bloco pronto de `## Trilha de Auditoria de Roteamento`** para o Reviewer persistir integralmente no relatório `docs/superpowers/reviews/YYYY-MM-DD-<feature>-review.md`.
+   - Reexecutar `bash <caminho-da-skill>/scripts/get-quotas.sh`, resolver Reviewer aplicando guarda `readOnly` e regra de independência de vendor frente ao Executor real.
+   - Abrir com `orca agent launch ... --surface terminal --focus --json`, aguardar `tui-idle`, injetar prompt `superpowers:requesting-code-review` + `superpowers:verification-before-completion` + bloco `## Trilha de Auditoria de Roteamento` para persistência no relatório `docs/superpowers/reviews/YYYY-MM-DD-<feature>-review.md`.
    - Aguardar `ETAPA reviewer CONCLUÍDA`.
 6. **Passo 5 — Consolidação e Relatório Final:**
-   - Exibir ao usuário veredito, resumo dos testes reais executados pelo Reviewer, link do relatório e a **Trilha de Auditoria de Roteamento** completa:
-     - Preset, `criticalThreshold`, `allowOpusOnDeep`, `onAllCritical`, `effortClass`.
-     - Tabela por etapa (Planner / Executor / Reviewer): `kind`, regra vencedora (`rule:<id>`), papel inicial, fallback aplicado e motivo (ex.: `fallback: builder → codex-builder por cota (claude week=84%)`), agente/modelo/esforço final.
-     - Cotas lidas em cada momento de decisão (`timestamp`, `claude 5h/week/opus`, `codex 5h/week/rateLimited`, `agy worst/buckets`, `opencode unavailable`).
+   - Exibir veredito, saída dos testes reais do Reviewer, caminho do relatório e a **Trilha de Auditoria de Roteamento** completa (`rule:<id>`, `role:<papel>`, `agent:<id>`, `model:<id>`, `fallback:<de→para> por cota`, agentes instalados e cotas lidas em cada decisão, sem PII).
 
 ---
 
-## 8. Estratégia de Verificação e TDD (Portátil nos 3 SOs)
+## 8. Estratégia de Verificação e TDD (Bash Puro + Fixtures Sem PII)
 
-Suíte única em Python 3 stdlib (`python3 -m unittest tests/test_orchestration_auto.py -v`), executável sem modificações em **Windows, macOS e Linux**:
+Suíte única em **bash puro** (`bash tests/test-orchestration-auto.sh`), sem `bats`, `jq`, `python`, `node` nem PowerShell, executável de forma idêntica em **macOS, Linux e Windows (Git Bash)**:
 
-1. **Testes unitários offline do coletor de cotas (`get_quotas.py`):**
-   - Importação direta das funções puras (`parse_claude_usage`, `parse_codex_usage`, `parse_antigravity_usage`, `unavailable_fitness`, `collect_all_quotas`).
-   - Claude com `seven_day_opus` preenchido vs nulo com fallback em `limits[]` (`weekly_scoped`, ignorando limites com `scope.surface != null`).
-   - Codex padrão (`5h` + `week`) + Codex Pro Lite (janela semanal chegando em `primary_window`, trocada por `by_duration`) + `limit_reached = true`.
-   - Antigravity agrupando modelos de mesma `(remainingFraction, resetTime)` em buckets (`Gemini`, `Claude`), ordenação pelo pior bucket, `usedPercent = 100 - remaining*100`, `rateLimited = true` para `>= 99.9%`.
-   - Provedores indisponíveis (`opencode`, `no_auth`, `no_cli`, `unavailable`) com `rateLimited = false`, `used = None` e `windows = {}`.
-   - Simulação de plataforma sem keyring disponível (ex.: Linux sem `secret-tool` / macOS sem `security`) garantindo degradação limpa para `no_auth`/`unavailable` com `rateLimited = false`.
-   - Invariante de segurança: saída JSON nunca contém `Bearer `, `access_token`, `accessToken` ou `refresh_token`.
-2. **Verificação estrutural, cross-platform e de presets JSON (`SKILL.md`, `README.md`):**
-   - Frontmatter YAML válido em `orca-superpowers-orchestration-auto/SKILL.md` (`name: orca-superpowers-orchestration-auto`, `description: Use when ...`).
-   - Presença obrigatória de todas as seções, endpoints, regras, presets, matriz de suporte por SO (Windows/macOS/Linux) e contrato TUI/gate/auditoria.
-   - **Guarda anti-Windows-only:** `orca-superpowers-orchestration-auto/SKILL.md` e `orca-superpowers-orchestration-auto/README.md` não contêm `%TEMP%`, `%APPDATA%`, `AppData\Local`, `$env:USERPROFILE` nem `powershell -NoProfile -ExecutionPolicy Bypass`.
-   - Blocos ` ```json ` de `SKILL.md` válidos em `json.loads`, todos os `role` referenciados existem em `roles`, todo `fallback` de papel `readOnly: true` também tem `readOnly: true` e nunca aponta para si mesmo, e todos os modelos pertencem à lista permitida.
-   - `README.md` da raiz listando `orca-superpowers-orchestration-auto` na tabela e nos blocos de instalação (POSIX macOS/Linux com `$HOME/...` e Windows PowerShell com `$env:USERPROFILE\...`) cobrindo os **5 destinos**.
+1. **Fixtures sem PII (`tests/fixtures/agent-installed.json` e `tests/fixtures/account-list.json`):** reproduzem a estrutura real do Orca com e-mails, UUIDs e caminhos de home removidos.
+2. **Um assert por comportamento de extração em `scripts/get-quotas.sh`:**
+   - Sintaxe `bash -n` válida + zero chamadas a `python`/`node`/`jq`/`pwsh`/`powershell`.
+   - Extração dos agentes instalados (`claude` default, `codex`, `opencode`, `opencode2`, `antigravity`, `copilot`).
+   - Janela 5h e semanal do `claude` (`5` / `66`, pior `weekly`, plano `pro`).
+   - Janela 5h e semanal do `codex` (`0` / `74`, pior `weekly`, plano `plus`).
+   - Janelas 5h/semanal + os 4 `buckets[]` do `antigravity` (`Gemini Models` 300m=12% e 10080m=6%; `Claude and GPT models` 300m=0% e 10080m=0%).
+   - Provedores `unavailable` (`gemini`, `kimi`, `opencodeGo`) reportados como indisponíveis (nunca críticos).
+   - Zero PII ou segredos nas fixtures e na saída do script.
+3. **Verificações estruturais da skill e documentação:**
+   - Frontmatter YAML, seções obrigatórias, contrato `orca agent installed` / `orca account list` / `orca agent launch --surface terminal --focus` / `tui-idle` / `ETAPA ... CONCLUÍDA`, fallback `curl`, ausência de comandos/caminhos Windows-only ou `python`/`jq`/`powershell` dentro da skill.
+   - Integridade dos 3 presets JSON em `SKILL.md` (chaves balanceadas, todo `role` de regra existe em `roles`, guarda `readOnly` nos fallbacks, nenhum modelo inventado).
+   - `orca-superpowers-orchestration-auto/README.md` e `README.md` da raiz atualizados com os **5 destinos** de instalação.
