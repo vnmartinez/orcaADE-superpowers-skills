@@ -51,7 +51,7 @@
     - `QUOTA|<provider>|<ok|unavailable>|<session_5h_pct|->|<weekly_pct|->|<worst_window|->|<worst_pct|->|<planType|->`
     - `BUCKET|<provider>|<group>|<windowMinutes>|<usedPercent>`
 
-- [ ] **Step 1: Criar fixtures sem PII e os testes que falham em `tests/test-orchestration-auto.sh`**
+- [x] **Step 1: Criar fixtures sem PII e os testes que falham em `tests/test-orchestration-auto.sh`**
 
 1. Criar `tests/fixtures/agent-installed.json` reproduzindo a estrutura real de `orca agent installed --worktree active --json` com 6 agentes: `claude` (`"default": true`), `codex`, `opencode`, `opencode2`, `antigravity`, `copilot`.
 2. Criar `tests/fixtures/account-list.json` reproduzindo a estrutura real de `orca account list --json` **sem qualquer PII** (sem e-mail, `organizationUuid`, `organizationName`, `home` ou `providerAccountId`), contendo `result.rateLimits` com:
@@ -69,12 +69,12 @@
    - `test_unavailable_providers`: asserta `QUOTA|gemini|unavailable|-|-|-|-|-`, `QUOTA|kimi|unavailable|-|-|-|-|-`, `QUOTA|opencodeGo|unavailable|-|-|-|-|-`.
    - `test_no_pii_or_secrets`: asserta que nem as fixtures nem a saída do script contêm `@`, `organizationUuid`, `Bearer `, `access_token`, `accessToken`, `refresh_token` ou `C:\Users`.
 
-- [ ] **Step 2: Rodar a suíte e confirmar que falha (RED)**
+- [x] **Step 2: Rodar a suíte e confirmar que falha (RED)**
 
 Run: `bash tests/test-orchestration-auto.sh` (ou `"C:\Program Files\Git\bin\bash.exe" tests/test-orchestration-auto.sh`)
 Expected: FAIL indicando que `orca-superpowers-orchestration-auto/scripts/get-quotas.sh` não existe.
 
-- [ ] **Step 3: Implementar `orca-superpowers-orchestration-auto/scripts/get-quotas.sh`**
+- [x] **Step 3: Implementar `orca-superpowers-orchestration-auto/scripts/get-quotas.sh`**
 
 Implementar em **bash puro + POSIX `awk`/`sed`/`grep`/`tr`/`cut`/`curl`** (sem `jq`/`python`/`node`/`pwsh`, gravado com LF `\n`):
 - Parse de argumentos `--agents-file <path>` e `--accounts-file <path>`.
@@ -86,7 +86,7 @@ Implementar em **bash puro + POSIX `awk`/`sed`/`grep`/`tr`/`cut`/`curl`** (sem `
   - Ao fechar cada `<provider>`: se `status == "ok"`, calcula `worst_window` (`session` se `session_pct >= weekly_pct`, senão `weekly`) e `worst_pct`, emitindo `QUOTA|<provider>|ok|<session|->|<weekly|->|<worst_window>|<worst_pct>|<planType|->`; se `status != "ok"`, emite `QUOTA|<provider>|unavailable|-|-|-|-|-`.
 - **Fallback direto com `curl` (`collect_direct_curl`):** acionado apenas quando não há `--accounts-file` e `orca` está ausente ou `orca account list --json` falha: emite `SOURCE|direct-curl`, tenta Claude (`$CLAUDE_OAUTH_TOKEN` ou `$HOME/.claude/.credentials.json` → `curl` em `https://api.anthropic.com/api/oauth/usage`) e Codex (`${CODEX_HOME:-$HOME/.codex}/auth.json` → `curl` em `https://chatgpt.com/backend-api/wham/usage`), e emite `unavailable` para os demais provedores — nunca imprimindo tokens.
 
-- [ ] **Step 4: Rodar os testes offline + smoke test real com Orca (GREEN)**
+- [x] **Step 4: Rodar os testes offline + smoke test real com Orca (GREEN)**
 
 Run:
 ```bash
@@ -95,7 +95,7 @@ bash orca-superpowers-orchestration-auto/scripts/get-quotas.sh
 ```
 Expected: todos os testes da Task 1 PASS; smoke test real imprime `SOURCE|orca`, os agentes instalados reais da máquina (`INSTALLED|...`), `QUOTA|...` e `BUCKET|antigravity|...`, com zero PII e zero tokens.
 
-- [ ] **Step 5: Commit atômico da Task 1**
+- [x] **Step 5: Commit atômico da Task 1**
 
 ```bash
 git add orca-superpowers-orchestration-auto/scripts/get-quotas.sh tests/fixtures/agent-installed.json tests/fixtures/account-list.json tests/test-orchestration-auto.sh

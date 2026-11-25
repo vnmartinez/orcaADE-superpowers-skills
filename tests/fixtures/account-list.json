@@ -1,0 +1,181 @@
+{
+  "id": "00000000-0000-0000-0000-000000000002",
+  "ok": true,
+  "result": {
+    "accounts": [],
+    "activeAccountId": {},
+    "rateLimits": {
+      "claude": {
+        "provider": "claude",
+        "session": {
+          "usedPercent": 5,
+          "windowMinutes": 300,
+          "resetsAt": 1795577400000,
+          "resetDescription": "0:30"
+        },
+        "weekly": {
+          "usedPercent": 66,
+          "windowMinutes": 10080,
+          "resetsAt": 1795744800000,
+          "resetDescription": "thu, 23:00"
+        },
+        "fableWeekly": null,
+        "monthly": null,
+        "extraUsage": null,
+        "updatedAt": 1795576331000,
+        "error": null,
+        "status": "ok",
+        "planType": "pro",
+        "usageMetadata": {
+          "credentialSource": "credentials-file",
+          "authProvenance": "system"
+        }
+      },
+      "codex": {
+        "provider": "codex",
+        "session": {
+          "usedPercent": 0,
+          "windowMinutes": 300,
+          "resetsAt": 1795594334000,
+          "resetDescription": "5:12"
+        },
+        "weekly": {
+          "usedPercent": 74,
+          "windowMinutes": 10080,
+          "resetsAt": 1795719118000,
+          "resetDescription": "thu, 15:51"
+        },
+        "monthly": null,
+        "rateLimitResetCredits": {
+          "availableCount": 2,
+          "nextExpiresAt": 1796065576000,
+          "credits": [
+            {
+              "status": "available",
+              "expiresAt": 1796065576000,
+              "grantedAt": 1793473576000
+            },
+            {
+              "status": "available",
+              "expiresAt": 1796158362000,
+              "grantedAt": 1793566362000
+            }
+          ]
+        },
+        "planType": "plus",
+        "updatedAt": 1795576333000,
+        "error": null,
+        "status": "ok",
+        "usageMetadata": {}
+      },
+      "antigravity": {
+        "provider": "antigravity",
+        "session": {
+          "usedPercent": 12,
+          "windowMinutes": 300,
+          "resetsAt": 1795585694000,
+          "resetDescription": null
+        },
+        "weekly": {
+          "usedPercent": 6,
+          "windowMinutes": 10080,
+          "resetsAt": 1796076377000,
+          "resetDescription": null
+        },
+        "buckets": [
+          {
+            "name": "Gemini Models · Weekly",
+            "group": "Gemini Models",
+            "windowName": "Weekly Limit Remaining",
+            "usedPercent": 6,
+            "windowMinutes": 10080,
+            "resetsAt": 1796076377000,
+            "resetDescription": null
+          },
+          {
+            "name": "Gemini Models · Five Hour",
+            "group": "Gemini Models",
+            "windowName": "Five Hour Limit Remaining",
+            "usedPercent": 12,
+            "windowMinutes": 300,
+            "resetsAt": 1795585694000,
+            "resetDescription": null
+          },
+          {
+            "name": "Claude and GPT models · Weekly",
+            "group": "Claude and GPT models",
+            "windowName": "Weekly Limit Remaining",
+            "usedPercent": 0,
+            "windowMinutes": 10080,
+            "resetsAt": 0,
+            "resetDescription": null
+          },
+          {
+            "name": "Claude and GPT models · Five Hour",
+            "group": "Claude and GPT models",
+            "windowName": "Five Hour Limit Remaining",
+            "usedPercent": 0,
+            "windowMinutes": 300,
+            "resetsAt": 0,
+            "resetDescription": null
+          }
+        ],
+        "updatedAt": 1795576336000,
+        "error": null,
+        "status": "ok",
+        "usageMetadata": {
+          "source": "cli",
+          "attemptedSources": ["cli"],
+          "lastSuccessfulSource": "cli",
+          "credentialSource": "antigravity-cli",
+          "authProvenance": "host"
+        }
+      },
+      "gemini": {
+        "provider": "gemini",
+        "session": null,
+        "weekly": null,
+        "updatedAt": 1795576331000,
+        "error": "Gemini CLI credentials not found",
+        "status": "unavailable"
+      },
+      "kimi": {
+        "provider": "kimi",
+        "session": null,
+        "weekly": null,
+        "updatedAt": 1795576331000,
+        "error": "Not signed in to Kimi Code",
+        "status": "unavailable"
+      },
+      "opencodeGo": {
+        "provider": "opencode-go",
+        "session": null,
+        "weekly": null,
+        "monthly": null,
+        "updatedAt": 1795576332000,
+        "error": "No OpenCode Go API key or session cookie configured",
+        "status": "unavailable",
+        "usageMetadata": {
+          "failureKind": "missing-credentials"
+        }
+      },
+      "minimaxCookieConfigured": false,
+      "claudeTarget": {
+        "runtime": "host",
+        "wslDistro": null
+      },
+      "inactiveClaudeAccounts": [
+        {
+          "accountId": "sample-inactive-01",
+          "rateLimits": {
+            "provider": "claude",
+            "session": { "usedPercent": 99, "windowMinutes": 300 },
+            "weekly": { "usedPercent": 99, "windowMinutes": 10080 },
+            "status": "ok",
+            "planType": "max"
+          }
+        }
+      ]
+    }
+  }
+}
