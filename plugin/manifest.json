@@ -1,0 +1,34 @@
+{
+  "manifestVersion": 1,
+  "id": "superpowers-skills",
+  "name": "Orca Superpowers Skills",
+  "version": "1.0.0",
+  "description": "Multi-agent superpowers orchestration skills bundle for all CLIs supported by Orca ADE.",
+  "repository": "https://github.com/vnmartinez/orcaADE-superpowers-skills",
+  "license": "MIT",
+  "layout": {
+    "sharedDir": ".agents/skills",
+    "backupDir": ".agents/.orca-superpowers-backups",
+    "stateFile": ".agents/.orca-superpowers-installed"
+  },
+  "skills": [
+    "orca-superpowers-orchestrator",
+    "orca-superpowers-orchestration-auto",
+    "orca-superpowers-review-loop",
+    "orca-superpowers-merge"
+  ],
+  "agentPaths": {
+    "claude": { "global": ".claude/skills", "local": ".claude/skills" },
+    "antigravity": { "global": ".gemini/config/skills", "local": ".agents/skills" },
+    "cursor": { "global": ".cursor/skills", "local": ".agents/skills" },
+    "droid": { "global": ".factory/skills", "local": ".factory/skills" },
+    "continue": { "global": ".continue/skills", "local": ".continue/skills" },
+    "trae": { "global": ".trae-cn/skills", "local": ".trae-cn/skills" },
+    "grok": { "global": ".grok/skills", "local": ".grok/skills" },
+    "aug": { "global": ".augment/skills", "local": ".augment/skills" },
+    "zcode": { "global": ".zcode/skills", "local": ".agents/skills" },
+    "codebuddy": { "global": ".codebuddy/skills", "local": ".codebuddy/skills" },
+    "kiro": { "global": ".kiro/skills", "local": ".kiro/skills" },
+    "openclaude": { "global": ".openclaude/skills", "local": ".openclaude/skills" }
+  }
+}

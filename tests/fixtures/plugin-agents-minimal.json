@@ -1,0 +1,28 @@
+{
+  "id": "00000000-0000-0000-0000-000000000001",
+  "ok": true,
+  "result": {
+    "agents": [
+      {
+        "id": "claude",
+        "name": "Claude",
+        "default": true
+      },
+      {
+        "id": "codex",
+        "name": "Codex",
+        "default": false
+      },
+      {
+        "id": "antigravity",
+        "name": "Antigravity",
+        "default": false
+      },
+      {
+        "id": "future-cli",
+        "name": "Future CLI",
+        "default": false
+      }
+    ]
+  }
+}

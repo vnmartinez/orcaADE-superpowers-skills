@@ -47,7 +47,7 @@
 - Produces (`tests/fixtures/plugin-agents-minimal.json`):
   - JSON no formato de `orca agent installed --worktree active --json` contendo `claude` (`default: true`), `codex`, `antigravity` e `future-cli` (zero PII).
 
-- [ ] **Step 1: Criar fixture `tests/fixtures/plugin-agents-minimal.json` e os testes iniciais (RED) em `tests/test-plugin-installer.sh`**
+- [x] **Step 1: Criar fixture `tests/fixtures/plugin-agents-minimal.json` e os testes iniciais (RED) em `tests/test-plugin-installer.sh`**
 
 1. Criar `tests/fixtures/plugin-agents-minimal.json` sem PII com 4 entradas em `result.agents[]`: `claude` (`default: true`), `codex`, `antigravity` e `future-cli`.
 2. Criar `tests/test-plugin-installer.sh` em bash puro (LF `\n`, helpers `assert_eq`, `assert_contains`, `assert_not_contains`, `assert_exists`, `assert_not_exists`, contadores `PASS`/`FAIL`, `exit 1` se `FAIL > 0`) contendo os testes da Task 1:
@@ -56,21 +56,21 @@
    - `test_manifest_agent_paths_complete`: valida que os 12 agentes com pasta própria (`claude`, `antigravity`, `cursor`, `droid`, `continue`, `trae`, `grok`, `aug`, `zcode`, `codebuddy`, `kiro`, `openclaude`) possuem `global` e `local` preenchidos, com `antigravity.global == ".gemini/config/skills"` e `antigravity.local == ".agents/skills"`.
    - `test_manifest_and_fixture_no_pii_or_windows_paths`: asserta ausência de `@`, `organizationUuid`, `C:\Users`, `%APPDATA%`, `%TEMP%`, `$env:USERPROFILE` e `\` em `plugin/manifest.json` e `tests/fixtures/plugin-agents-minimal.json`.
 
-- [ ] **Step 2: Rodar a suíte e confirmar que falha (RED)**
+- [x] **Step 2: Rodar a suíte e confirmar que falha (RED)**
 
 Run: `bash tests/test-plugin-installer.sh`
 Expected: FAIL indicando que `plugin/manifest.json` ainda não existe.
 
-- [ ] **Step 3: Criar `plugin/manifest.json`**
+- [x] **Step 3: Criar `plugin/manifest.json`**
 
 Escrever `plugin/manifest.json` com o esquema exato da Seção 4 da spec (`docs/superpowers/specs/2026-11-25-plugin-multiagente-design.md`).
 
-- [ ] **Step 4: Rodar os testes da Task 1 e confirmar que passam (GREEN)**
+- [x] **Step 4: Rodar os testes da Task 1 e confirmar que passam (GREEN)**
 
 Run: `bash tests/test-plugin-installer.sh`
 Expected: todos os testes da Task 1 PASS (`FAIL=0`).
 
-- [ ] **Step 5: Commit atômico da Task 1**
+- [x] **Step 5: Commit atômico da Task 1**
 
 ```bash
 git add plugin/manifest.json tests/fixtures/plugin-agents-minimal.json tests/test-plugin-installer.sh
