@@ -188,7 +188,7 @@ git commit -m "feat: adiciona SKILL.md agent-agnostic e bash/Git Bash da skill o
 - Consumes: `orca-superpowers-orchestration-auto/SKILL.md` e `orca-superpowers-orchestration-auto/scripts/get-quotas.sh`.
 - Produces: documentação concisa da skill (sem Python/PowerShell/jq) e índice/instalador raiz atualizado para as 4 skills nos **5 destinos** em macOS/Linux/Git Bash (`$HOME/...`) e alternativa PowerShell.
 
-- [ ] **Step 1: Adicionar asserts de `README.md` (skill e raiz) em `tests/test-orchestration-auto.sh`**
+- [x] **Step 1: Adicionar asserts de `README.md` (skill e raiz) em `tests/test-orchestration-auto.sh`**
 
 Estender `tests/test-orchestration-auto.sh` com:
 1. `test_skill_readme`: verifica existência de `orca-superpowers-orchestration-auto/README.md`, links para `[SKILL.md](SKILL.md)` e `scripts/get-quotas.sh`, seções `## Conteúdo`, `## Visão Geral`, `## Garantias`, menção a agent-agnostic (`orca agent installed` / `orca account list`), bash/Git Bash (Windows/macOS/Linux), escolha automática sem perguntar, TUI obrigatória, gate único no Passo 2, e ausência de `python3`, `jq`, `powershell`, `%APPDATA%` ou PII.
@@ -203,19 +203,19 @@ Estender `tests/test-orchestration-auto.sh` com:
    - Bloco alternativo Windows PowerShell também atualizado com as 4 skills e os **5 destinos** (`\.claude\skills`, `\.gemini\config\plugins\superpowers\skills`, `\.codex\skills`, `\.agents\skills`, `\.config\opencode\skills`).
 3. `test_all_sh_scripts_lf_and_syntax`: verifica `bash -n` e ausência de CRLF (`\r`) em `orca-superpowers-orchestration-auto/scripts/get-quotas.sh` e `tests/test-orchestration-auto.sh`.
 
-- [ ] **Step 2: Rodar a suíte e confirmar que os novos testes falham (RED)**
+- [x] **Step 2: Rodar a suíte e confirmar que os novos testes falham (RED)**
 
 Run: `bash tests/test-orchestration-auto.sh`
 Expected: FAIL nos novos testes de README (enquanto Tasks 1 e 2 continuam PASS).
 
-- [ ] **Step 3: Criar `orca-superpowers-orchestration-auto/README.md` e atualizar `README.md` da raiz**
+- [x] **Step 3: Criar `orca-superpowers-orchestration-auto/README.md` e atualizar `README.md` da raiz**
 
 - Criar `orca-superpowers-orchestration-auto/README.md` no estilo conciso das 3 skills existentes (`# Skill Orquestração Automática (Orca Superpowers Orchestration Auto)`, `## Conteúdo`, `## Visão Geral`, `## Garantias`).
 - Atualizar `README.md` da raiz:
   - Adicionar `orca-superpowers-orchestration-auto` à tabela `## Skills`.
   - Em `## Instalação`, colocar como caminho principal o loop **bash / Git Bash (macOS, Linux e Windows)** com as 4 skills nos **5 destinos** `$HOME/...`, e manter abaixo a opção alternativa em PowerShell atualizada para as 4 skills e os **5 destinos**.
 
-- [ ] **Step 4: Rodar verificação completa (GREEN)**
+- [x] **Step 4: Rodar verificação completa (GREEN)**
 
 Run:
 ```bash
@@ -225,7 +225,7 @@ git status -sb
 ```
 Expected: 100% dos testes PASS (exit code 0), `get-quotas.sh` retorna dados reais sem PII/tokens, e apenas os arquivos esperados estão criados/modificados.
 
-- [ ] **Step 5: Commit atômico da Task 3**
+- [x] **Step 5: Commit atômico da Task 3**
 
 ```bash
 git add orca-superpowers-orchestration-auto/README.md README.md tests/test-orchestration-auto.sh

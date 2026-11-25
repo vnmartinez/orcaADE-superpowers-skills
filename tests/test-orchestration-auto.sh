@@ -6,6 +6,8 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 GET_QUOTAS="$REPO_ROOT/orca-superpowers-orchestration-auto/scripts/get-quotas.sh"
 SKILL_MD="$REPO_ROOT/orca-superpowers-orchestration-auto/SKILL.md"
+SKILL_README="$REPO_ROOT/orca-superpowers-orchestration-auto/README.md"
+ROOT_README="$REPO_ROOT/README.md"
 AGENTS_FIXTURE="$REPO_ROOT/tests/fixtures/agent-installed.json"
 ACCOUNTS_FIXTURE="$REPO_ROOT/tests/fixtures/account-list.json"
 
@@ -455,6 +457,91 @@ test_skill_frontmatter
 test_skill_required_sections_and_contract
 test_skill_no_forbidden_tools_paths_or_pii
 test_skill_presets_integrity
+
+test_skill_readme() {
+  if [ ! -f "$SKILL_README" ]; then
+    printf 'FAIL: test_skill_readme (missing: %s)\n' "$SKILL_README" >&2
+    FAIL=$((FAIL + 1))
+    return
+  fi
+  local doc
+  doc="$(cat "$SKILL_README")"
+  assert_contains "skill_readme_title" "# Skill Orquestração Automática (Orca Superpowers Orchestration Auto)" "$doc"
+  assert_contains "skill_readme_link_skill" "[SKILL.md](SKILL.md)" "$doc"
+  assert_contains "skill_readme_link_script" "scripts/get-quotas.sh" "$doc"
+  assert_contains "skill_readme_sec_content" "## Conteúdo" "$doc"
+  assert_contains "skill_readme_sec_overview" "## Visão Geral" "$doc"
+  assert_contains "skill_readme_sec_guarantees" "## Garantias" "$doc"
+  assert_contains "skill_readme_orca_installed" "orca agent installed" "$doc"
+  assert_contains "skill_readme_orca_accounts" "orca account list" "$doc"
+  assert_contains "skill_readme_git_bash" "Git Bash" "$doc"
+  assert_contains "skill_readme_auto_choice" "sem perguntar" "$doc"
+  assert_contains "skill_readme_tui" "TUI interativa obrigatória" "$doc"
+  assert_contains "skill_readme_gate_passo2" "Passo 2" "$doc"
+  assert_not_contains "skill_readme_no_python3" "python3" "$doc"
+  assert_not_contains "skill_readme_no_jq" "jq" "$doc"
+  assert_not_contains "skill_readme_no_powershell" "powershell" "$doc"
+  assert_not_contains "skill_readme_no_appdata" "%APPDATA%" "$doc"
+  assert_not_contains "skill_readme_no_org_uuid" "organizationUuid" "$doc"
+  if printf '%s\n' "$doc" | grep -E -q '@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'; then
+    printf 'FAIL: skill_readme_no_email_pii (email pattern found)\n' >&2
+    FAIL=$((FAIL + 1))
+  else
+    printf 'PASS: skill_readme_no_email_pii\n'
+    PASS=$((PASS + 1))
+  fi
+}
+
+test_root_readme_5_destinations() {
+  if [ ! -f "$ROOT_README" ]; then
+    printf 'FAIL: test_root_readme_5_destinations (missing: %s)\n' "$ROOT_README" >&2
+    FAIL=$((FAIL + 1))
+    return
+  fi
+  local doc
+  doc="$(cat "$ROOT_README")"
+  assert_contains "root_readme_table_auto" "[orca-superpowers-orchestration-auto](orca-superpowers-orchestration-auto/SKILL.md)" "$doc"
+  assert_contains "root_readme_skill_orchestrator" "orca-superpowers-orchestrator" "$doc"
+  assert_contains "root_readme_skill_review_loop" "orca-superpowers-review-loop" "$doc"
+  assert_contains "root_readme_skill_merge" "orca-superpowers-merge" "$doc"
+  assert_contains "root_readme_skill_auto" "orca-superpowers-orchestration-auto" "$doc"
+
+  assert_contains "root_readme_bash_dest_claude" '$HOME/.claude/skills/$skill' "$doc"
+  assert_contains "root_readme_bash_dest_gemini" '$HOME/.gemini/config/plugins/superpowers/skills/$skill' "$doc"
+  assert_contains "root_readme_bash_dest_codex" '$HOME/.codex/skills/$skill' "$doc"
+  assert_contains "root_readme_bash_dest_agents" '$HOME/.agents/skills/$skill' "$doc"
+  assert_contains "root_readme_bash_dest_opencode" '$HOME/.config/opencode/skills/$skill' "$doc"
+
+  assert_contains "root_readme_ps_dest_claude" '\.claude\skills' "$doc"
+  assert_contains "root_readme_ps_dest_gemini" '\.gemini\config\plugins\superpowers\skills' "$doc"
+  assert_contains "root_readme_ps_dest_codex" '\.codex\skills' "$doc"
+  assert_contains "root_readme_ps_dest_agents" '\.agents\skills' "$doc"
+  assert_contains "root_readme_ps_dest_opencode" '\.config\opencode\skills' "$doc"
+}
+
+test_all_sh_scripts_lf_and_syntax() {
+  local f
+  for f in "$GET_QUOTAS" "$REPO_ROOT/tests/test-orchestration-auto.sh"; do
+    if bash -n "$f" 2>/dev/null; then
+      printf 'PASS: sh_syntax_%s\n' "$(basename "$f")"
+      PASS=$((PASS + 1))
+    else
+      printf 'FAIL: sh_syntax_%s\n' "$(basename "$f")" >&2
+      FAIL=$((FAIL + 1))
+    fi
+    if awk '{ if (index($0, "\r") > 0) exit 1 }' "$f"; then
+      printf 'PASS: sh_lf_%s\n' "$(basename "$f")"
+      PASS=$((PASS + 1))
+    else
+      printf 'FAIL: sh_lf_%s (contains CRLF)\n' "$(basename "$f")" >&2
+      FAIL=$((FAIL + 1))
+    fi
+  done
+}
+
+test_skill_readme
+test_root_readme_5_destinations
+test_all_sh_scripts_lf_and_syntax
 
 printf 'Summary: PASS=%d FAIL=%d\n' "$PASS" "$FAIL"
 if [ "$FAIL" -gt 0 ]; then
