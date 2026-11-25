@@ -13,21 +13,23 @@ ROOT_README="$REPO_ROOT/README.md"
 PASS=0
 FAIL=0
 
-TMP_DIRS=""
+TMP_DIRS=()
 cleanup_tmp_dirs() {
   local d
-  for d in $TMP_DIRS; do
-    if [ -n "$d" ] && [ -d "$d" ]; then
-      rm -rf "$d"
-    fi
-  done
+  if [ "${#TMP_DIRS[@]}" -gt 0 ]; then
+    for d in "${TMP_DIRS[@]}"; do
+      if [ -n "$d" ] && [ -d "$d" ]; then
+        rm -rf "$d"
+      fi
+    done
+  fi
 }
 trap cleanup_tmp_dirs EXIT
 
 make_tmp_dir() {
   local d
   d="$(mktemp -d)"
-  TMP_DIRS="$TMP_DIRS $d"
+  TMP_DIRS+=("$d")
   printf '%s\n' "$d"
 }
 
@@ -751,6 +753,20 @@ test_installer_uninstall_agent_tracks_shared_canonical_consumers() {
   assert_not_exists "uninstall_claude_second_removed_canonical" "$tmp3/.agents/skills/orca-superpowers-merge"
 }
 
+test_cleanup_tmp_dirs_handles_spaces_in_tmpdir() {
+  local base spaced_tmp created
+  base="$(mktemp -d)"
+  spaced_tmp="$base/tmp dir with spaces"
+  mkdir -p "$spaced_tmp"
+  (
+    TMPDIR="$spaced_tmp" make_tmp_dir >/dev/null
+    cleanup_tmp_dirs
+  )
+  created="$(find "$spaced_tmp" -mindepth 1)"
+  assert_eq "cleanup_tmp_dirs_removes_spaced_dir" "" "$created"
+  rm -rf "$base"
+}
+
 test_installer_conflict_skip_and_force_backup
 test_installer_inplace_update_when_managed_version_changes
 test_installer_local_mode_respects_existing_agent_dirs
@@ -759,6 +775,7 @@ test_installer_uninstall_preserves_unmanaged_copy_unless_forced
 test_installer_fallback_without_orca_detects_home_dirs
 test_installer_canonical_skip_does_not_propagate_or_loop_update
 test_installer_uninstall_agent_tracks_shared_canonical_consumers
+test_cleanup_tmp_dirs_handles_spaces_in_tmpdir
 
 test_plugin_readme() {
   assert_exists "plugin_readme_exists" "$PLUGIN_README"
