@@ -114,7 +114,7 @@ git commit -m "feat: adiciona coletor bash puro de cotas Orca, fixtures sem PII 
 - Consumes: `orca-superpowers-orchestration-auto/scripts/get-quotas.sh` (invocação `bash <caminho-da-skill>/scripts/get-quotas.sh` e formato `INSTALLED|...`/`QUOTA|...`/`BUCKET|...`).
 - Produces: `orca-superpowers-orchestration-auto/SKILL.md` com frontmatter YAML (`name: orca-superpowers-orchestration-auto`), protocolo agent-agnostic completo, presets JSON válidos (`economy`, `balanced`, `performance`), fallback `curl` documentado e trilha de auditoria.
 
-- [ ] **Step 1: Adicionar asserts de `SKILL.md` em `tests/test-orchestration-auto.sh`**
+- [x] **Step 1: Adicionar asserts de `SKILL.md` em `tests/test-orchestration-auto.sh`**
 
 Estender `tests/test-orchestration-auto.sh` com os seguintes testes (bash + POSIX `awk`/`grep`):
 1. `test_skill_frontmatter`: `orca-superpowers-orchestration-auto/SKILL.md` existe, começa com `---`, contém `name: orca-superpowers-orchestration-auto` e `description: Use when `.
@@ -133,12 +133,12 @@ Estender `tests/test-orchestration-auto.sh` com os seguintes testes (bash + POSI
    - Todo `"fallback"` não nulo em `"roles"` existe em `"roles"`, difere de `"name"`, e se o papel tem `"readOnly": true`, o papel de fallback também tem `"readOnly": true`.
    - Nenhum papel com `"model": null` define `"effort"` não nulo (respeitando `--effort` exige `--model` do `orca agent launch`).
 
-- [ ] **Step 2: Rodar a suíte e confirmar que os novos testes falham (RED)**
+- [x] **Step 2: Rodar a suíte e confirmar que os novos testes falham (RED)**
 
 Run: `bash tests/test-orchestration-auto.sh`
 Expected: FAIL indicando que `orca-superpowers-orchestration-auto/SKILL.md` não existe (enquanto testes da Task 1 continuam PASS).
 
-- [ ] **Step 3: Criar `orca-superpowers-orchestration-auto/SKILL.md`**
+- [x] **Step 3: Criar `orca-superpowers-orchestration-auto/SKILL.md`**
 
 Redigir `orca-superpowers-orchestration-auto/SKILL.md` em português (frontmatter em inglês), cobrindo integralmente as Seções 3, 4, 5, 6 e 7 da Spec revisada:
 - Frontmatter YAML (`name: orca-superpowers-orchestration-auto`, `description: Use when ...`).
@@ -163,12 +163,12 @@ Redigir `orca-superpowers-orchestration-auto/SKILL.md` em português (frontmatte
 - `## Comandos Úteis do Orca ADE`.
 - `## Red Flags - Erros Críticos`.
 
-- [ ] **Step 4: Rodar a suíte e confirmar tudo verde (GREEN)**
+- [x] **Step 4: Rodar a suíte e confirmar tudo verde (GREEN)**
 
 Run: `bash tests/test-orchestration-auto.sh`
 Expected: PASS em todos os testes das Tasks 1 e 2.
 
-- [ ] **Step 5: Commit atômico da Task 2**
+- [x] **Step 5: Commit atômico da Task 2**
 
 ```bash
 git add orca-superpowers-orchestration-auto/SKILL.md tests/test-orchestration-auto.sh
