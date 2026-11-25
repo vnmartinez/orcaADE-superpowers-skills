@@ -494,20 +494,22 @@ state_get_entry() {
 state_upsert_line() {
   local state_data="$1"
   local new_line="$2"
-  local k s r
+  local k a="" s r
   k="$(printf '%s\n' "$new_line" | awk -F'|' '{ print $1 }')"
   if [ "$k" = "CANONICAL" ]; then
     s="$(printf '%s\n' "$new_line" | awk -F'|' '{ print $2 }')"
     r="$(printf '%s\n' "$new_line" | awk -F'|' '{ print $3 }')"
   else
+    a="$(printf '%s\n' "$new_line" | awk -F'|' '{ print $2 }')"
     s="$(printf '%s\n' "$new_line" | awk -F'|' '{ print $3 }')"
     r="$(printf '%s\n' "$new_line" | awk -F'|' '{ print $4 }')"
   fi
   local filtered
-  filtered="$(printf '%s\n' "$state_data" | awk -F'|' -v k="$k" -v s="$s" -v r="$r" '
+  filtered="$(printf '%s\n' "$state_data" | awk -F'|' -v k="$k" -v a="$a" -v s="$s" -v r="$r" '
     /^#/ || NF == 0 { next }
     k == "CANONICAL" && $1 == "CANONICAL" && $2 == s && $3 == r { next }
     k == "TARGET" && $1 == "TARGET" && $3 == s && $4 == r { next }
+    k == "SHARED" && $1 == "SHARED" && $2 == a && $3 == s && $4 == r { next }
     { print $0 }
   ')"
   if [ -n "$filtered" ]; then
@@ -522,10 +524,12 @@ state_remove_line() {
   local kind="$2"
   local skill="$3"
   local rel_path="$4"
-  printf '%s\n' "$state_data" | awk -F'|' -v k="$kind" -v s="$skill" -v r="$rel_path" '
+  local agent="${5:-}"
+  printf '%s\n' "$state_data" | awk -F'|' -v k="$kind" -v s="$skill" -v r="$rel_path" -v a="$agent" '
     /^#/ || NF == 0 { next }
     k == "CANONICAL" && $1 == "CANONICAL" && $2 == s && $3 == r { next }
-    k == "TARGET" && $1 == "TARGET" && $3 == s && $4 == r { next }
+    k == "TARGET" && $1 == "TARGET" && $3 == s && $4 == r && (a == "" || $2 == a) { next }
+    k == "SHARED" && $1 == "SHARED" && $3 == s && (r == "" || $4 == r) && (a == "" || $2 == a) { next }
     { print $0 }
   '
 }
@@ -567,16 +571,44 @@ backup_path() {
   fi
 }
 
+is_shared_agent() {
+  local ag="$1"
+  local mode_str="$2"
+  local rel_dir
+  if [ "$ag" = "universal" ]; then
+    return 0
+  fi
+  rel_dir="$(agent_rel_path "$ag" "$mode_str")"
+  if [ -z "$rel_dir" ] || [ "$rel_dir" = "$SHARED_DIR" ]; then
+    return 0
+  fi
+  return 1
+}
+
+build_shared_agents() {
+  local agents_list="$1"
+  local mode_str="$2"
+  local shared_agents="" ag
+  while IFS= read -r ag; do
+    [ -z "$ag" ] && continue
+    if is_shared_agent "$ag" "$mode_str"; then
+      shared_agents="${shared_agents:+$shared_agents
+}$ag"
+    fi
+  done <<EOF
+$agents_list
+EOF
+  printf '%s\n' "$shared_agents"
+}
+
 build_target_pairs() {
   local agents_list="$1"
   local mode_str="$2"
   local target_pairs="" seen_dirs="" ag rel_dir parent_dir
   while IFS= read -r ag; do
     [ -z "$ag" ] && continue
-    [ "$ag" = "universal" ] && continue
+    is_shared_agent "$ag" "$mode_str" && continue
     rel_dir="$(agent_rel_path "$ag" "$mode_str")"
-    [ -z "$rel_dir" ] && continue
-    [ "$rel_dir" = "$SHARED_DIR" ] && continue
     if [ "$mode_str" = "local" ]; then
       parent_dir="$(dirname "$rel_dir")"
       if [ ! -d "$BASE_DIR/$parent_dir" ]; then
@@ -635,8 +667,9 @@ install_flow() {
   local state_data
   state_data="$(read_state "$state_abs")"
 
-  local target_pairs
+  local target_pairs shared_agents
   target_pairs="$(build_target_pairs "$agents_list" "$mode_str")"
+  shared_agents="$(build_shared_agents "$agents_list" "$mode_str")"
 
   local c_installed=0 c_updated=0 c_linked=0 c_copied=0 c_kept=0 c_skipped=0 c_backed_up=0 c_removed=0
   local skill src_dir src_digest canon_rel canon_abs entry cur_digest st_ver st_dig canon_skipped
@@ -704,6 +737,16 @@ install_flow() {
           canon_skipped=1
         fi
       fi
+    fi
+
+    if [ "$canon_skipped" -eq 0 ] && [ "$DRY_RUN" -eq 0 ] && [ -n "$shared_agents" ]; then
+      local s_ag
+      while IFS= read -r s_ag; do
+        [ -z "$s_ag" ] && continue
+        state_data="$(state_upsert_line "$state_data" "SHARED|$s_ag|$skill|$canon_rel")"
+      done <<EOF
+$shared_agents
+EOF
     fi
 
     # Dedicated agent targets
@@ -853,8 +896,9 @@ uninstall_flow() {
   local state_data
   state_data="$(read_state "$state_abs")"
 
-  local target_pairs
+  local target_pairs shared_agents
   target_pairs="$(build_target_pairs "$agents_list" "$mode_str")"
+  shared_agents="$(build_shared_agents "$agents_list" "$mode_str")"
 
   # When no explicit --agent filter was given, also include any TARGET dirs present in state_data
   if [ -z "$FILTER_AGENT" ] && [ -n "$state_data" ]; then
@@ -897,8 +941,8 @@ EOF
           c_removed=$((c_removed + 1))
           if [ "$DRY_RUN" -eq 0 ]; then
             rm -rf "$dest_abs"
-            state_data="$(state_remove_line "$state_data" "TARGET" "$skill" "$dest_rel")"
           fi
+          state_data="$(state_remove_line "$state_data" "TARGET" "$skill" "$dest_rel")"
         elif [ "$FORCE" -eq 1 ]; then
           backup_path "$skill" "$dest_rel"
           c_backed_up=$((c_backed_up + 1))
@@ -914,11 +958,23 @@ EOF
 $target_pairs
 EOF
 
+    if [ -z "$FILTER_AGENT" ]; then
+      state_data="$(state_remove_line "$state_data" "SHARED" "$skill" "" "")"
+    elif [ -n "$shared_agents" ]; then
+      local s_ag
+      while IFS= read -r s_ag; do
+        [ -z "$s_ag" ] && continue
+        state_data="$(state_remove_line "$state_data" "SHARED" "$skill" "$canon_rel" "$s_ag")"
+      done <<EOF
+$shared_agents
+EOF
+    fi
+
     # 2. Remove canonical copy if allowed
     local remove_canonical=1
-    if [ -n "$FILTER_AGENT" ] && [ "$FILTER_AGENT" != "universal" ]; then
+    if [ -n "$FILTER_AGENT" ]; then
       local rem_targets
-      rem_targets="$(printf '%s\n' "$state_data" | awk -F'|' -v s="$skill" '$1 == "TARGET" && $3 == s { c++ } END { print c+0 }')"
+      rem_targets="$(printf '%s\n' "$state_data" | awk -F'|' -v s="$skill" '($1 == "TARGET" || $1 == "SHARED") && $3 == s { c++ } END { print c+0 }')"
       if [ "$rem_targets" -gt 0 ]; then
         remove_canonical=0
       fi
@@ -931,8 +987,8 @@ EOF
         c_removed=$((c_removed + 1))
         if [ "$DRY_RUN" -eq 0 ]; then
           rm -rf "$canon_abs"
-          state_data="$(state_remove_line "$state_data" "CANONICAL" "$skill" "$canon_rel")"
         fi
+        state_data="$(state_remove_line "$state_data" "CANONICAL" "$skill" "$canon_rel")"
       elif [ "$FORCE" -eq 1 ]; then
         backup_path "$skill" "$canon_rel"
         c_backed_up=$((c_backed_up + 1))

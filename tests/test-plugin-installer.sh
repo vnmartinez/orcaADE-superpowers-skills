@@ -708,6 +708,49 @@ test_installer_canonical_skip_does_not_propagate_or_loop_update() {
   assert_contains "canon_skip_run2_updated_0" "|updated=0|" "$out2"
 }
 
+test_installer_uninstall_agent_tracks_shared_canonical_consumers() {
+  local tmp tmp2 tmp3 out status
+  tmp="$(make_tmp_dir)"
+  HOME="$tmp" bash "$INSTALLER_SH" --agent claude,codex --skill orca-superpowers-merge >/dev/null 2>&1
+  out="$(HOME="$tmp" bash "$INSTALLER_SH" --uninstall --agent claude --skill orca-superpowers-merge 2>&1)"
+  status=$?
+  assert_eq "uninstall_claude_keeps_codex_exit" "0" "$status"
+  assert_not_exists "uninstall_claude_removed_claude" "$tmp/.claude/skills/orca-superpowers-merge"
+  assert_exists "uninstall_claude_kept_canonical_for_codex" "$tmp/.agents/skills/orca-superpowers-merge/SKILL.md"
+
+  out="$(HOME="$tmp" bash "$INSTALLER_SH" --uninstall --agent codex --skill orca-superpowers-merge 2>&1)"
+  status=$?
+  assert_eq "uninstall_codex_last_exit" "0" "$status"
+  assert_not_exists "uninstall_codex_last_removed_canonical" "$tmp/.agents/skills/orca-superpowers-merge"
+  assert_not_exists "uninstall_codex_last_removed_state" "$tmp/.agents/.orca-superpowers-installed"
+
+  tmp2="$(make_tmp_dir)"
+  HOME="$tmp2" bash "$INSTALLER_SH" --agent codex,opencode --skill orca-superpowers-merge >/dev/null 2>&1
+  out="$(HOME="$tmp2" bash "$INSTALLER_SH" --uninstall --agent codex --skill orca-superpowers-merge 2>&1)"
+  status=$?
+  assert_eq "uninstall_shared_codex_exit" "0" "$status"
+  assert_exists "uninstall_shared_codex_kept_opencode" "$tmp2/.agents/skills/orca-superpowers-merge/SKILL.md"
+
+  out="$(HOME="$tmp2" bash "$INSTALLER_SH" --uninstall --agent opencode --skill orca-superpowers-merge 2>&1)"
+  status=$?
+  assert_eq "uninstall_shared_opencode_exit" "0" "$status"
+  assert_not_exists "uninstall_shared_opencode_removed_canonical" "$tmp2/.agents/skills/orca-superpowers-merge"
+  assert_not_exists "uninstall_shared_opencode_removed_state" "$tmp2/.agents/.orca-superpowers-installed"
+
+  tmp3="$(make_tmp_dir)"
+  HOME="$tmp3" bash "$INSTALLER_SH" --agent claude,codex --skill orca-superpowers-merge >/dev/null 2>&1
+  out="$(HOME="$tmp3" bash "$INSTALLER_SH" --uninstall --agent codex --skill orca-superpowers-merge 2>&1)"
+  status=$?
+  assert_eq "uninstall_codex_first_exit" "0" "$status"
+  assert_exists "uninstall_codex_first_kept_canonical_for_claude" "$tmp3/.agents/skills/orca-superpowers-merge/SKILL.md"
+  assert_exists "uninstall_codex_first_kept_claude" "$tmp3/.claude/skills/orca-superpowers-merge/SKILL.md"
+  out="$(HOME="$tmp3" bash "$INSTALLER_SH" --uninstall --agent claude --skill orca-superpowers-merge 2>&1)"
+  status=$?
+  assert_eq "uninstall_claude_second_exit" "0" "$status"
+  assert_not_exists "uninstall_claude_second_removed_claude" "$tmp3/.claude/skills/orca-superpowers-merge"
+  assert_not_exists "uninstall_claude_second_removed_canonical" "$tmp3/.agents/skills/orca-superpowers-merge"
+}
+
 test_installer_conflict_skip_and_force_backup
 test_installer_inplace_update_when_managed_version_changes
 test_installer_local_mode_respects_existing_agent_dirs
@@ -715,6 +758,7 @@ test_installer_uninstall_reversibility_and_third_party_isolation
 test_installer_uninstall_preserves_unmanaged_copy_unless_forced
 test_installer_fallback_without_orca_detects_home_dirs
 test_installer_canonical_skip_does_not_propagate_or_loop_update
+test_installer_uninstall_agent_tracks_shared_canonical_consumers
 
 test_plugin_readme() {
   assert_exists "plugin_readme_exists" "$PLUGIN_README"
