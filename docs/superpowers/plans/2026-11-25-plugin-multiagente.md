@@ -221,18 +221,18 @@ git commit -m "feat: adiciona backup com force, modo local, update in-place e un
   - `plugin/README.md`: guia completo do plugin multiagente (comando único, todas as flags, tabela dos destinos globais e locais do Orca, fallback Windows Git Bash, atualização, rollback via backup e próximos passos de publicação).
   - `README.md` (raiz): seção `## Instalação` com comando único (`bash scripts/install-skills.sh`), opções rápidas (`--dry-run`, `--local`, `--force`, `--uninstall`) e link para `[plugin/README.md](plugin/README.md)`, seguida de `### Instalação manual (alternativa)` preservando intactos os blocos bash e PowerShell dos 5 destinos.
 
-- [ ] **Step 1: Adicionar asserts de documentação e verificação final em `tests/test-plugin-installer.sh` (RED)**
+- [x] **Step 1: Adicionar asserts de documentação e verificação final em `tests/test-plugin-installer.sh` (RED)**
 
 Adicionar e invocar:
 1. `test_plugin_readme`: valida existência de `plugin/README.md` e presença de `bash scripts/install-skills.sh`, `--dry-run`, `--force`, `--uninstall`, `--local`, `--agent universal`, `.agents/skills`, `.claude/skills`, `.gemini/config/skills`, `.agents/.orca-superpowers-backups`, `plugin/manifest.json`, além de ausência de `python3`, `jq`, `powershell`, `%APPDATA%` e e-mail PII.
 2. `test_root_readme_plugin_installer_and_manual_fallback`: valida em `README.md` raiz a presença do comando único `bash scripts/install-skills.sh`, link `[plugin/README.md](plugin/README.md)`, `--dry-run`, `--uninstall`, e preservação dos 5 destinos manuais (bash + PowerShell).
 
-- [ ] **Step 2: Rodar a suíte e confirmar que falha (RED)**
+- [x] **Step 2: Rodar a suíte e confirmar que falha (RED)**
 
 Run: `bash tests/test-plugin-installer.sh`
 Expected: FAIL indicando ausência de `plugin/README.md` e de `bash scripts/install-skills.sh` no `README.md` raiz.
 
-- [ ] **Step 3: Criar `plugin/README.md` e atualizar `README.md` raiz**
+- [x] **Step 3: Criar `plugin/README.md` e atualizar `README.md` raiz**
 
 1. Criar `plugin/README.md` em português, objetivo e completo, cobrindo:
    - Comando único de instalação (`bash scripts/install-skills.sh`, rodando no terminal macOS/Linux ou no Git Bash no Windows, sem caminhos com `\`).
@@ -245,7 +245,7 @@ Expected: FAIL indicando ausência de `plugin/README.md` e de `bash scripts/inst
    - Colocar o **Instalador multiagente (Recomendado — 1 comando)** no topo da seção `## Instalação` com `bash scripts/install-skills.sh`, exemplos de `--dry-run`, `--local`, `--force`, `--uninstall` e link `[plugin/README.md](plugin/README.md)`.
    - Mover os blocos atuais (`macOS / Linux / Git Bash` e `Windows PowerShell`) para `### Instalação manual (alternativa)` preservando exatamente os 5 destinos sem alterar nenhuma string testada por `tests/test-orchestration-auto.sh`.
 
-- [ ] **Step 4: Rodar ambas as suítes + smoke test real com `--dry-run` no Orca (GREEN)**
+- [x] **Step 4: Rodar ambas as suítes + smoke test real com `--dry-run` no Orca (GREEN)**
 
 Run:
 ```bash
@@ -259,7 +259,7 @@ Expected:
 - `bash scripts/install-skills.sh --dry-run`: exit `0`, detecta os agentes reais desta máquina via `orca agent installed` e imprime o plano sem alterar nenhum arquivo no `$HOME`.
 - `git diff --name-only` não toca nenhum `*/SKILL.md` nem `*/README.md` das 4 skills existentes.
 
-- [ ] **Step 5: Commit atômico da Task 4**
+- [x] **Step 5: Commit atômico da Task 4**
 
 ```bash
 git add plugin/README.md README.md tests/test-plugin-installer.sh

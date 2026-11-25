@@ -14,9 +14,30 @@ Combinação de ferramentas para usar superpowers e orquestração no Orca ADE.
 
 ## Instalação
 
+### Instalador multiagente (Recomendado — 1 comando)
+
+Instala as 4 skills automaticamente em `.agents/skills` e em todos os CLIs detectados pelo Orca (`orca agent installed --worktree active --json`), com suporte a atualização idempotente, `--dry-run`, backup com `--force` e remoção segura com `--uninstall`. Execute no terminal (macOS/Linux ou Git Bash no Windows):
+
+```bash
+bash scripts/install-skills.sh
+```
+
+Comandos úteis:
+
+```bash
+bash scripts/install-skills.sh --dry-run    # simula sem gravar arquivos
+bash scripts/install-skills.sh --local      # instala no projeto atual (.agents/skills + CLIs presentes)
+bash scripts/install-skills.sh --force      # faz backup de cópias manuais divergentes e substitui
+bash scripts/install-skills.sh --uninstall  # remove apenas as skills do plugin (preserva terceiros)
+```
+
+Consulte a documentação completa de flags, tabela de agentes e rollback em [plugin/README.md](plugin/README.md).
+
+### Instalação manual (alternativa)
+
 Copie as pastas das skills para os **5 destinos** dos agentes (`Claude Code`, `Antigravity (Gemini)`, `Codex`, `Agents` e `OpenCode`).
 
-### macOS / Linux / Git Bash (Windows) — Recomendado
+#### macOS / Linux / Git Bash (Windows)
 
 ```bash
 skills=(
@@ -42,7 +63,7 @@ for skill in "${skills[@]}"; do
 done
 ```
 
-### Windows PowerShell (alternativa)
+#### Windows PowerShell (alternativa)
 
 ```powershell
 # Claude Code / Antigravity (Gemini) / Codex / Agents / OpenCode

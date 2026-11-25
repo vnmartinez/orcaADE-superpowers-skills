@@ -686,6 +686,56 @@ test_installer_uninstall_reversibility_and_third_party_isolation
 test_installer_uninstall_preserves_unmanaged_copy_unless_forced
 test_installer_fallback_without_orca_detects_home_dirs
 
+test_plugin_readme() {
+  assert_exists "plugin_readme_exists" "$PLUGIN_README"
+  if [ ! -f "$PLUGIN_README" ]; then
+    return
+  fi
+  local doc
+  doc="$(cat "$PLUGIN_README")"
+  assert_contains "plugin_readme_cmd" "bash scripts/install-skills.sh" "$doc"
+  assert_contains "plugin_readme_dry_run" "--dry-run" "$doc"
+  assert_contains "plugin_readme_force" "--force" "$doc"
+  assert_contains "plugin_readme_uninstall" "--uninstall" "$doc"
+  assert_contains "plugin_readme_local" "--local" "$doc"
+  assert_contains "plugin_readme_agent_universal" "--agent universal" "$doc"
+  assert_contains "plugin_readme_shared_dir" ".agents/skills" "$doc"
+  assert_contains "plugin_readme_claude_dir" ".claude/skills" "$doc"
+  assert_contains "plugin_readme_gemini_dir" ".gemini/config/skills" "$doc"
+  assert_contains "plugin_readme_backup_dir" ".agents/.orca-superpowers-backups" "$doc"
+  assert_contains "plugin_readme_manifest" "plugin/manifest.json" "$doc"
+  assert_not_contains "plugin_readme_no_python3" "python3" "$doc"
+  assert_not_contains "plugin_readme_no_jq" "jq" "$doc"
+  assert_not_contains "plugin_readme_no_powershell" "powershell" "$doc"
+  assert_not_contains "plugin_readme_no_appdata" "%APPDATA%" "$doc"
+  if printf '%s\n' "$doc" | grep -E -q '@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'; then
+    printf 'FAIL: plugin_readme_no_email_pii (email pattern found)\n' >&2
+    FAIL=$((FAIL + 1))
+  else
+    printf 'PASS: plugin_readme_no_email_pii\n'
+    PASS=$((PASS + 1))
+  fi
+}
+
+test_root_readme_plugin_installer_and_manual_fallback() {
+  assert_exists "root_readme_exists" "$ROOT_README"
+  if [ ! -f "$ROOT_README" ]; then
+    return
+  fi
+  local doc
+  doc="$(cat "$ROOT_README")"
+  assert_contains "root_readme_installer_cmd" "bash scripts/install-skills.sh" "$doc"
+  assert_contains "root_readme_plugin_link" "[plugin/README.md](plugin/README.md)" "$doc"
+  assert_contains "root_readme_dry_run" "--dry-run" "$doc"
+  assert_contains "root_readme_uninstall" "--uninstall" "$doc"
+  assert_contains "root_readme_manual_section" "### Instalação manual (alternativa)" "$doc"
+  assert_contains "root_readme_manual_bash_claude" '$HOME/.claude/skills/$skill' "$doc"
+  assert_contains "root_readme_manual_ps_opencode" '\.config\opencode\skills' "$doc"
+}
+
+test_plugin_readme
+test_root_readme_plugin_installer_and_manual_fallback
+
 printf 'Summary: PASS=%d FAIL=%d\n' "$PASS" "$FAIL"
 if [ "$FAIL" -gt 0 ]; then
   exit 1
