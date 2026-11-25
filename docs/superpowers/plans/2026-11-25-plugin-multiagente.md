@@ -151,7 +151,7 @@ git commit -m "feat: adiciona instalador bash multiagente com descoberta dinamic
   - `uninstall_flow`: remove destinos gerenciados (links/cópias e canônico) respeitando `--skill`, `--agent`, `--dry-run` e `--force`, sem nunca tocar skills de terceiros nem cópias manuais não gerenciadas (salvo com `--force`, fazendo backup primeiro).
   - Modo `--local`: só cria links em `agentPaths.<agent>.local` quando `local != sharedDir` **e** o diretório-pai do agente (ex.: `<proj>/.claude`) já existir no projeto.
 
-- [ ] **Step 1: Adicionar testes de conflito, backup, update, `--local` e `--uninstall` em `tests/test-plugin-installer.sh` (RED)**
+- [x] **Step 1: Adicionar testes de conflito, backup, update, `--local` e `--uninstall` em `tests/test-plugin-installer.sh` (RED)**
 
 Adicionar e invocar:
 1. `test_installer_conflict_skip_and_force_backup`:
@@ -180,12 +180,12 @@ Adicionar e invocar:
    - Criar `$tmp/.claude` e `$tmp/.cursor` (sem `--agents-file` e com `PATH` contendo diretório mínimo sem `orca`, ou com flag/env que simule ausência do `orca`, ex.: `ORCA_BIN=/nonexistent`).
    - Rodar `HOME="$tmp" ORCA_BIN=/nonexistent bash scripts/install-skills.sh`: instala `.agents/skills`, `.claude/skills` e `.cursor/skills` sem criar `.kiro` ou `.gemini`.
 
-- [ ] **Step 2: Rodar a suíte e confirmar que os novos testes falham (RED)**
+- [x] **Step 2: Rodar a suíte e confirmar que os novos testes falham (RED)**
 
 Run: `bash tests/test-plugin-installer.sh`
 Expected: FAIL nos testes novos de `--force` backup, `--local`, `--uninstall` e fallback sem `orca`.
 
-- [ ] **Step 3: Implementar backup, update in-place, modo `--local`, `ORCA_BIN` fallback e `--uninstall` em `scripts/install-skills.sh`**
+- [x] **Step 3: Implementar backup, update in-place, modo `--local`, `ORCA_BIN` fallback e `--uninstall` em `scripts/install-skills.sh`**
 
 Implementar em `scripts/install-skills.sh` mantendo POSIX puro (LF `\n`):
 - Suporte a `ORCA_BIN="${ORCA_BIN:-orca}"` para descoberta limpa e testável sem depender de `PATH` mutado.
@@ -194,12 +194,12 @@ Implementar em `scripts/install-skills.sh` mantendo POSIX puro (LF `\n`):
 - Regra `--local`: resolve `agentPaths.<agent>.local`; se igual a `sharedDir`, ignora (coberto pelo canônico); senão verifica `[ -d "$BASE_DIR/$(dirname "$agent_rel_dir")" ]` antes de criar link/cópia.
 - `uninstall_flow`: valida propriedade via `$STATE_FILE` ou symlink apontando para `$SHARED_DIR/<skill>`; respeita `--dry-run`, `--skill`, `--agent` e `--force`; reescreve `$STATE_FILE` mantendo apenas entradas restantes (ou remove o arquivo se vazio).
 
-- [ ] **Step 4: Rodar a suíte completa do instalador e confirmar que tudo passa (GREEN)**
+- [x] **Step 4: Rodar a suíte completa do instalador e confirmar que tudo passa (GREEN)**
 
 Run: `bash tests/test-plugin-installer.sh`
 Expected: todos os testes das Tasks 1, 2 e 3 PASS (`FAIL=0`).
 
-- [ ] **Step 5: Commit atômico da Task 3**
+- [x] **Step 5: Commit atômico da Task 3**
 
 ```bash
 git add scripts/install-skills.sh tests/test-plugin-installer.sh

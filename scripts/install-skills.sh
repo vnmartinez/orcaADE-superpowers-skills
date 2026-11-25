@@ -397,11 +397,36 @@ resolve_target_agents() {
       return 1
     fi
     raw="$(parse_agents_json < "$AGENTS_FILE")"
-  elif command -v "$ORCA_BIN" >/dev/null 2>&1; then
-    local orca_out
-    orca_out="$("$ORCA_BIN" agent installed --worktree active --json 2>/dev/null || true)"
-    if [ -n "$orca_out" ]; then
-      raw="$(printf '%s\n' "$orca_out" | parse_agents_json)"
+  else
+    if command -v "$ORCA_BIN" >/dev/null 2>&1; then
+      local orca_out
+      orca_out="$("$ORCA_BIN" agent installed --worktree active --json 2>/dev/null || true)"
+      if [ -n "$orca_out" ]; then
+        raw="$(printf '%s\n' "$orca_out" | parse_agents_json)"
+      fi
+    fi
+    if [ -z "$raw" ]; then
+      local mode_key="global"
+      [ "$MODE_LOCAL" -eq 1 ] && mode_key="local"
+      local line ag rel_dir parent_dir
+      while IFS= read -r line; do
+        [ -z "$line" ] && continue
+        ag="$(printf '%s\n' "$line" | awk -F'|' '{ print $2 }')"
+        if [ "$mode_key" = "local" ]; then
+          rel_dir="$(printf '%s\n' "$line" | awk -F'|' '{ print $4 }')"
+        else
+          rel_dir="$(printf '%s\n' "$line" | awk -F'|' '{ print $3 }')"
+        fi
+        [ -z "$rel_dir" ] && continue
+        [ "$rel_dir" = "$SHARED_DIR" ] && continue
+        parent_dir="$(dirname "$rel_dir")"
+        if [ -d "$BASE_DIR/$parent_dir" ]; then
+          raw="${raw:+$raw
+}$ag"
+        fi
+      done <<EOF
+$ALL_AGENT_PATHS
+EOF
     fi
   fi
 
@@ -492,12 +517,82 @@ state_upsert_line() {
   fi
 }
 
+state_remove_line() {
+  local state_data="$1"
+  local kind="$2"
+  local skill="$3"
+  local rel_path="$4"
+  printf '%s\n' "$state_data" | awk -F'|' -v k="$kind" -v s="$skill" -v r="$rel_path" '
+    /^#/ || NF == 0 { next }
+    k == "CANONICAL" && $1 == "CANONICAL" && $2 == s && $3 == r { next }
+    k == "TARGET" && $1 == "TARGET" && $3 == s && $4 == r { next }
+    { print $0 }
+  '
+}
+
 agent_rel_path() {
   local ag="$1"
   local mode="$2"
   printf '%s\n' "$ALL_AGENT_PATHS" | awk -F'|' -v a="$ag" -v m="$mode" '
     $2 == a { print (m == "local" ? $4 : $3); exit }
   '
+}
+
+RUN_TS=""
+get_run_timestamp() {
+  if [ -z "$RUN_TS" ]; then
+    RUN_TS="$(date +%Y%m%d-%H%M%S)"
+  fi
+  printf '%s\n' "$RUN_TS"
+}
+
+backup_path() {
+  local skill="$1"
+  local rel_path="$2"
+  local ts ts_dir backup_rel backup_abs orig_abs idx=0
+  ts="$(get_run_timestamp)"
+  ts_dir="$ts"
+  while [ -e "$BASE_DIR/$BACKUP_DIR/$ts_dir/$rel_path" ] || [ -L "$BASE_DIR/$BACKUP_DIR/$ts_dir/$rel_path" ]; do
+    idx=$((idx + 1))
+    ts_dir="${ts}-${idx}"
+  done
+  backup_rel="$BACKUP_DIR/$ts_dir/$rel_path"
+  backup_abs="$BASE_DIR/$backup_rel"
+  orig_abs="$BASE_DIR/$rel_path"
+
+  printf 'ACTION|BACKUP|%s|%s|%s\n' "$skill" "$rel_path" "$backup_rel"
+  if [ "$DRY_RUN" -eq 0 ]; then
+    mkdir -p "$(dirname "$backup_abs")"
+    mv "$orig_abs" "$backup_abs"
+  fi
+}
+
+build_target_pairs() {
+  local agents_list="$1"
+  local mode_str="$2"
+  local target_pairs="" seen_dirs="" ag rel_dir parent_dir
+  while IFS= read -r ag; do
+    [ -z "$ag" ] && continue
+    [ "$ag" = "universal" ] && continue
+    rel_dir="$(agent_rel_path "$ag" "$mode_str")"
+    [ -z "$rel_dir" ] && continue
+    [ "$rel_dir" = "$SHARED_DIR" ] && continue
+    if [ "$mode_str" = "local" ]; then
+      parent_dir="$(dirname "$rel_dir")"
+      if [ ! -d "$BASE_DIR/$parent_dir" ]; then
+        continue
+      fi
+    fi
+    if ! printf '%s\n' "$seen_dirs" | grep -F -x -q -- "$rel_dir"; then
+      seen_dirs="${seen_dirs:+$seen_dirs
+}$rel_dir"
+      target_pairs="${target_pairs:+$target_pairs
+}$ag|$rel_dir"
+    fi
+  done <<EOF
+$agents_list
+EOF
+  printf '%s\n' "$target_pairs"
 }
 
 materialize_target() {
@@ -540,23 +635,8 @@ install_flow() {
   local state_data
   state_data="$(read_state "$state_abs")"
 
-  # Build unique dedicated target pairs: agent|rel_dir
-  local target_pairs="" seen_dirs="" ag rel_dir
-  while IFS= read -r ag; do
-    [ -z "$ag" ] && continue
-    [ "$ag" = "universal" ] && continue
-    rel_dir="$(agent_rel_path "$ag" "$mode_str")"
-    [ -z "$rel_dir" ] && continue
-    [ "$rel_dir" = "$SHARED_DIR" ] && continue
-    if ! printf '%s\n' "$seen_dirs" | grep -F -x -q -- "$rel_dir"; then
-      seen_dirs="${seen_dirs:+$seen_dirs
-}$rel_dir"
-      target_pairs="${target_pairs:+$target_pairs
-}$ag|$rel_dir"
-    fi
-  done <<EOF
-$agents_list
-EOF
+  local target_pairs
+  target_pairs="$(build_target_pairs "$agents_list" "$mode_str")"
 
   local c_installed=0 c_updated=0 c_linked=0 c_copied=0 c_kept=0 c_skipped=0 c_backed_up=0 c_removed=0
   local skill src_dir src_digest canon_rel canon_abs entry cur_digest st_ver st_dig
@@ -604,6 +684,16 @@ EOF
           printf 'ACTION|KEEP|%s|%s|adopted\n' "$skill" "$canon_rel"
           c_kept=$((c_kept + 1))
           if [ "$DRY_RUN" -eq 0 ]; then
+            state_data="$(state_upsert_line "$state_data" "CANONICAL|$skill|$canon_rel|$PLUGIN_VERSION|$src_digest")"
+          fi
+        elif [ "$FORCE" -eq 1 ]; then
+          backup_path "$skill" "$canon_rel"
+          c_backed_up=$((c_backed_up + 1))
+          printf 'ACTION|INSTALL|%s|%s|\n' "$skill" "$canon_rel"
+          c_installed=$((c_installed + 1))
+          if [ "$DRY_RUN" -eq 0 ]; then
+            mkdir -p "$(dirname "$canon_abs")"
+            cp -R "$src_dir" "$canon_abs"
             state_data="$(state_upsert_line "$state_data" "CANONICAL|$skill|$canon_rel|$PLUGIN_VERSION|$src_digest")"
           fi
         else
@@ -671,6 +761,28 @@ EOF
               [ -L "$dest_abs" ] && det_mode="link"
               state_data="$(state_upsert_line "$state_data" "TARGET|$t_agent|$skill|$dest_rel|$det_mode|$PLUGIN_VERSION|$src_digest")"
             fi
+          elif [ "$FORCE" -eq 1 ]; then
+            backup_path "$skill" "$dest_rel"
+            c_backed_up=$((c_backed_up + 1))
+            if [ "$DRY_RUN" -eq 1 ]; then
+              if [ "$FORCE_COPY" -eq 1 ]; then
+                printf 'ACTION|COPY|%s|%s|\n' "$skill" "$dest_rel"
+                c_copied=$((c_copied + 1))
+              else
+                printf 'ACTION|LINK|%s|%s|\n' "$skill" "$dest_rel"
+                c_linked=$((c_linked + 1))
+              fi
+            else
+              mat_mode="$(materialize_target "$canon_abs" "$dest_abs" "$FORCE_COPY")"
+              if [ "$mat_mode" = "link" ]; then
+                printf 'ACTION|LINK|%s|%s|\n' "$skill" "$dest_rel"
+                c_linked=$((c_linked + 1))
+              else
+                printf 'ACTION|COPY|%s|%s|\n' "$skill" "$dest_rel"
+                c_copied=$((c_copied + 1))
+              fi
+              state_data="$(state_upsert_line "$state_data" "TARGET|$t_agent|$skill|$dest_rel|$mat_mode|$PLUGIN_VERSION|$src_digest")"
+            fi
           else
             printf 'ACTION|SKIP|%s|%s|unmanaged-conflict\n' "$skill" "$dest_rel"
             printf 'Warning: unmanaged copy exists at %s (use --force to backup and replace)\n' "$dest_rel" >&2
@@ -693,5 +805,158 @@ EOF
     "$c_installed" "$c_updated" "$c_linked" "$c_copied" "$c_kept" "$c_skipped" "$c_backed_up" "$c_removed"
 }
 
-install_flow
+is_symlink_to_canonical() {
+  local dest_abs="$1"
+  local canon_abs="$2"
+  local skill="$3"
+  if [ ! -L "$dest_abs" ]; then
+    return 1
+  fi
+  local link_target
+  link_target="$(readlink "$dest_abs" 2>/dev/null || true)"
+  if [ "$link_target" = "$canon_abs" ]; then
+    return 0
+  fi
+  case "$link_target" in
+    *"$SHARED_DIR/$skill") return 0 ;;
+  esac
+  return 1
+}
+
+uninstall_flow() {
+  local agents_list agents_csv mode_str dry_str
+  agents_list="$(resolve_target_agents)" || exit 1
+  agents_csv="$(printf '%s\n' "$agents_list" | awk 'NF { out = (out ? out "," $0 : $0) } END { print out }')"
+
+  if [ "$MODE_LOCAL" -eq 1 ]; then
+    mode_str="local"
+  else
+    mode_str="global"
+  fi
+  if [ "$DRY_RUN" -eq 1 ]; then
+    dry_str="dry-run"
+  else
+    dry_str="apply"
+  fi
+
+  printf 'PLUGIN|%s|%s|%s|%s|agents:%s\n' "$PLUGIN_ID" "$PLUGIN_VERSION" "$mode_str" "$dry_str" "$agents_csv"
+
+  local state_abs="$BASE_DIR/$STATE_REL"
+  local state_data
+  state_data="$(read_state "$state_abs")"
+
+  local target_pairs
+  target_pairs="$(build_target_pairs "$agents_list" "$mode_str")"
+
+  # When no explicit --agent filter was given, also include any TARGET dirs present in state_data
+  if [ -z "$FILTER_AGENT" ] && [ -n "$state_data" ]; then
+    local st_pairs line t_ag t_rel t_dir
+    st_pairs="$(printf '%s\n' "$state_data" | awk -F'|' '$1 == "TARGET" { print $2 "|" $4 }')"
+    while IFS= read -r line; do
+      [ -z "$line" ] && continue
+      t_ag="$(printf '%s\n' "$line" | awk -F'|' '{ print $1 }')"
+      t_rel="$(printf '%s\n' "$line" | awk -F'|' '{ print $2 }')"
+      t_dir="$(dirname "$t_rel")"
+      if ! printf '%s\n' "$target_pairs" | grep -F -q -- "|$t_dir"; then
+        target_pairs="${target_pairs:+$target_pairs
+}$t_ag|$t_dir"
+      fi
+    done <<EOF
+$st_pairs
+EOF
+  fi
+
+  local c_installed=0 c_updated=0 c_linked=0 c_copied=0 c_kept=0 c_skipped=0 c_backed_up=0 c_removed=0
+  local skill canon_rel canon_abs entry
+
+  while IFS= read -r skill; do
+    [ -z "$skill" ] && continue
+    canon_rel="$SHARED_DIR/$skill"
+    canon_abs="$BASE_DIR/$canon_rel"
+
+    # 1. Remove dedicated agent targets
+    while IFS= read -r pair; do
+      [ -z "$pair" ] && continue
+      local t_dir dest_rel dest_abs
+      t_dir="$(printf '%s\n' "$pair" | awk -F'|' '{ print $2 }')"
+      dest_rel="$t_dir/$skill"
+      dest_abs="$BASE_DIR/$dest_rel"
+
+      if [ -e "$dest_abs" ] || [ -L "$dest_abs" ]; then
+        entry="$(state_get_entry "$state_data" "TARGET" "$skill" "$dest_rel")"
+        if [ -n "$entry" ] || is_symlink_to_canonical "$dest_abs" "$canon_abs" "$skill"; then
+          printf 'ACTION|REMOVE|%s|%s|\n' "$skill" "$dest_rel"
+          c_removed=$((c_removed + 1))
+          if [ "$DRY_RUN" -eq 0 ]; then
+            rm -rf "$dest_abs"
+            state_data="$(state_remove_line "$state_data" "TARGET" "$skill" "$dest_rel")"
+          fi
+        elif [ "$FORCE" -eq 1 ]; then
+          backup_path "$skill" "$dest_rel"
+          c_backed_up=$((c_backed_up + 1))
+          printf 'ACTION|REMOVE|%s|%s|after-backup\n' "$skill" "$dest_rel"
+          c_removed=$((c_removed + 1))
+        else
+          printf 'ACTION|SKIP|%s|%s|unmanaged-copy\n' "$skill" "$dest_rel"
+          printf 'Warning: unmanaged copy exists at %s (use --force to backup and remove)\n' "$dest_rel" >&2
+          c_skipped=$((c_skipped + 1))
+        fi
+      fi
+    done <<EOF
+$target_pairs
+EOF
+
+    # 2. Remove canonical copy if allowed
+    local remove_canonical=1
+    if [ -n "$FILTER_AGENT" ] && [ "$FILTER_AGENT" != "universal" ]; then
+      local rem_targets
+      rem_targets="$(printf '%s\n' "$state_data" | awk -F'|' -v s="$skill" '$1 == "TARGET" && $3 == s { c++ } END { print c+0 }')"
+      if [ "$rem_targets" -gt 0 ]; then
+        remove_canonical=0
+      fi
+    fi
+
+    if [ "$remove_canonical" -eq 1 ] && { [ -e "$canon_abs" ] || [ -L "$canon_abs" ]; }; then
+      entry="$(state_get_entry "$state_data" "CANONICAL" "$skill" "$canon_rel")"
+      if [ -n "$entry" ]; then
+        printf 'ACTION|REMOVE|%s|%s|\n' "$skill" "$canon_rel"
+        c_removed=$((c_removed + 1))
+        if [ "$DRY_RUN" -eq 0 ]; then
+          rm -rf "$canon_abs"
+          state_data="$(state_remove_line "$state_data" "CANONICAL" "$skill" "$canon_rel")"
+        fi
+      elif [ "$FORCE" -eq 1 ]; then
+        backup_path "$skill" "$canon_rel"
+        c_backed_up=$((c_backed_up + 1))
+        printf 'ACTION|REMOVE|%s|%s|after-backup\n' "$skill" "$canon_rel"
+        c_removed=$((c_removed + 1))
+      else
+        printf 'ACTION|SKIP|%s|%s|unmanaged-copy\n' "$skill" "$canon_rel"
+        printf 'Warning: unmanaged copy exists at %s (use --force to backup and remove)\n' "$canon_rel" >&2
+        c_skipped=$((c_skipped + 1))
+      fi
+    fi
+  done <<EOF
+$SELECTED_SKILLS
+EOF
+
+  if [ "$DRY_RUN" -eq 0 ]; then
+    local rem_count
+    rem_count="$(printf '%s\n' "$state_data" | awk 'NF && $0 !~ /^#/ { c++ } END { print c+0 }')"
+    if [ "$rem_count" -gt 0 ]; then
+      write_state "$state_abs" "$state_data"
+    else
+      rm -f "$state_abs"
+    fi
+  fi
+
+  printf 'SUMMARY|installed=%d|updated=%d|linked=%d|copied=%d|kept=%d|skipped=%d|backed_up=%d|removed=%d\n' \
+    "$c_installed" "$c_updated" "$c_linked" "$c_copied" "$c_kept" "$c_skipped" "$c_backed_up" "$c_removed"
+}
+
+if [ "$UNINSTALL" -eq 1 ]; then
+  uninstall_flow
+else
+  install_flow
+fi
 exit 0
