@@ -19,7 +19,8 @@ Coordena o ciclo completo de desenvolvimento dentro do **Orca ADE** no mesmo wor
 │                                                                        │
 │                      [AGENTE ORQUESTRADOR]                             │
 │   Passo 0: get-quotas.sh (orca agent installed + orca account list)    │
-│            Classifica effortClass + Resolve Planner/Executor/Reviewer  │
+│            Extrai TaskProfile (5 dimensões) -> effortClass             │
+│            Resolve Planner/Executor/Reviewer: candidato mais barato    │
 │            (SEM perguntar agente/modelo ao humano)                     │
 │                                │                                       │
 │    1. orca agent launch        ▼                                       │
@@ -184,6 +185,7 @@ Fixtures, saídas do script, logs e trilha de auditoria **nunca** imprimem nem g
 
 - **`kind`:** `research | code | review | command | docs | scrap`
 - **`effortClass`:** `light | standard | deep`
+- **`TaskProfile`:** `{ decision, verification, risk, ambiguity, blast }` — 5 dimensões objetivas extraídas do requisito no Passo 0 **antes** de qualquer roteamento; derivam o `effortClass` (ver "Perfil da Tarefa")
 - **`Role`:** `{ name, agent, model, effort, readOnly, timeoutSeconds, fallback, orchestrator }`
 - **`QuotaGate`:** `{ agent, window, below }`
   - `"short"` → `session` (5h)
@@ -196,30 +198,49 @@ Fixtures, saídas do script, logs e trilha de auditoria **nunca** imprimem nem g
   - `criticalThreshold`: `0..100` (padrão: `80`)
   - `allowOpusOnDeep`: `true | false` (padrão: `true`)
   - `onBothCritical`: `"run-cheapest" | "ask" | "block"` (padrão na skill auto: `"run-cheapest"`, mantendo o gate do plano como única pergunta no fluxo padrão)
+  - `profileWeights`: lista opcional `[{ when, effortClass }]` sobrescrevendo a derivação default do `TaskProfile` (padrão: as regras da seção "Perfil da Tarefa")
+  - `costOrder`: ordem de custo crescente dos papéis do preset — define quem é o candidato mais barato e a escada de escalação do probe
 
 ### Classificação da tarefa e mapeamento das 3 etapas
 
-| `effortClass` | Critério objetivo |
+Antes de rotear, o orquestrador **entende a tarefa** extraindo um `TaskProfile` de 5 dimensões objetivas (perguntas com resposta única, respondidas lendo o requisito):
+
+| Dimensão | Pergunta | Valores |
+|---|---|---|
+| `decision` | O Planner precisa **decidir** arquitetura/abordagem, ou só detalhar algo já decidido? | `decidir` / `detalhar` |
+| `verification` | O objetivo é provável por teste automatizado? | `automated` / `manual` / `none` |
+| `risk` | Pode destruir dados, quebrar chamador existente ou mudar contrato público? | `alto` / `baixo` |
+| `ambiguity` | O requisito está completo ou com escolhas em aberto? | `aberta` / `fechada` |
+| `blast` | Arquivos/módulos afetados | `1-2` / `localizado` / `transversal` |
+
+Derivação determinística do `effortClass` (as regras abaixo são o default; um preset pode sobrescrever com `profileWeights`):
+
+1. **`deep`** se `decision=decidir` OU `risk=alto` OU `blast=transversal` — quem decide ou mexe em contrato/carrega risco não pode ser modelo barato improvisando.
+2. **`light`** se `blast=1-2` E `ambiguity=fechada` E `verification=automated` E `risk=baixo` — execução localizada, requisito fechado, provável por teste: só gasta o mínimo.
+3. **`standard`** em qualquer outro caso.
+
+| `effortClass` | Intenção |
 |---|---|
-| `light` | Ajuste localizado em 1–2 arquivos, correção pontual, documentação simples ou tarefa mecânica sem mudança arquitetural |
-| `standard` | Nova feature ou refatoração localizada em múltiplos arquivos/módulos com TDD, seguindo padrões existentes |
-| `deep` | Decisão arquitetural, novo protocolo/motor, concorrência, segurança, migração crítica ou mudança transversal |
+| `light` | Ajuste localizado em 1–2 arquivos, correção pontual, documentação simples |
+| `standard` | Nova feature ou refatoração localizada em múltiplos arquivos com TDD |
+| `deep` | Decisão arquitetural, concorrência, segurança, migração crítica ou mudança transversal |
 
 Mapeamento por etapa:
 1. **Planner:** `kind = "docs"` (se puramente documental) ou `kind = "research"` (padrão) + `effortClass`.
 2. **Executor:** `kind = "docs"` (se entrega documental) ou `kind = "code"` (padrão; `"command"` para automação CLI pura) + `effortClass`.
 3. **Reviewer:** `kind = "review"` + `effortClass`.
 
-### Algoritmo de resolução (4 passos determinísticos)
+### Algoritmo de resolução (5 passos determinísticos)
 
 Para cada etapa `(kind, effortClass)`:
 
-1. **Avaliação top-down de regras filtrada por `INSTALLED_AGENTS`:**
+1. **Avaliação de regras filtrada por `INSTALLED_AGENTS`, ordenada por custo:**
    - Ignorar regra com `enabled == false`.
    - `kinds` deve ser vazio ou conter `kind`; `efforts` deve ser vazio ou conter `effortClass`.
    - Todos os `gates` devem passar: se a cota do `gate.agent` estiver ausente, com `status: unavailable` ou com janela `-`, o gate passa (`true`); caso contrário, exige `usedPercent < gate.below`.
    - Se `allowOpusOnDeep == false` e `role.model` contiver `opus`, pular regra.
-   - Se `role.agent` estiver em `INSTALLED_AGENTS`, a regra vence (`rule:<id>`, `role:<name>`). Se não estiver instalado, tentar `role.fallback` (respeitando `readOnly`); se nenhum estiver instalado, seguir para a próxima regra. Se nenhuma regra casar com agente instalado, selecionar o primeiro agente de `INSTALLED_AGENTS` (priorizando o marcado `default`) e registrar o fallback na auditoria.
+   - Reunir **todos** os papéis de regras que casaram como candidatos (não apenas a primeira regra da lista) e ordená-los pelo `costOrder` do preset: o vencedor inicial é o **candidato mais barato que casou** (`rule:<id>`, `role:<name>`, `cost:orden`). Para a etapa Reviewer, descartar candidatos `readOnly: false` da lista antes de ordenar.
+   - Se o papel escolhido tiver agente ausente de `INSTALLED_AGENTS`, tentar `role.fallback` (respeitando `readOnly`); se nenhum estiver instalado, seguir para o candidato seguinte em `costOrder`. Se nenhuma regra casar com agente instalado, selecionar o primeiro agente de `INSTALLED_AGENTS` (priorizando o marcado `default`) e registrar o fallback na auditoria.
 2. **Checagem de limiar crítico (`criticalThreshold`) e fallback de 1 nível:**
    - Um provedor é crítico **somente** se `status == "ok"` e `worst_pct >= criticalThreshold`. Provedor com `status: unavailable` ou sem entrada **nunca é crítico**.
    - Se o agente escolhido for crítico:
@@ -233,6 +254,11 @@ Para cada etapa `(kind, effortClass)`:
      - `"run-cheapest"`: escolhe o papel/agente de menor `worst_pct` entre os instalados (preservando `readOnly` no Reviewer) e registra `all-critical: run-cheapest`.
      - `"ask"`: pausa e pergunta ao usuário se deseja prosseguir exibindo os percentuais atuais.
      - `"block"`: interrompe sem despachar e encerra com `status: FALHA`.
+5. **Escalação por probe (pós-etapa):**
+   - Cada etapa concluída é julgada pelo **veredito estruturado do `probe`** embutido no prompt (Passos 1/3/4): `PASS` ou `FAIL` com uma linha de evidência real (teste, diff, saída de comando).
+   - `probe: PASS` → segue o fluxo normal.
+   - `probe: FAIL` → revalidar cotas, escolher o **próximo candidato em `costOrder`** compatível (preservando `readOnly: true` no Reviewer) e reexecutar **a mesma etapa uma única vez**, registrando `escalation:<de→para>` na trilha.
+   - Segundo `FAIL` seguido na mesma etapa → **parar e avisar o usuário** com a trilha completa; nunca virar loop. A escalação sobe custo, não qualidade às cegas: exige nova evidência a cada tentativa.
 
 ---
 
@@ -242,6 +268,7 @@ Para cada etapa `(kind, effortClass)`:
 {
   "economy": {
     "description": "Prioriza modelos economicos do Antigravity e default do Codex; evita Opus",
+    "costOrder": ["eco-scout", "eco-codex-ro", "eco-builder", "eco-planner", "eco-ag-builder", "eco-reviewer"],
     "roles": [
       {
         "name": "eco-scout",
@@ -341,6 +368,7 @@ Para cada etapa `(kind, effortClass)`:
   },
   "balanced": {
     "description": "Padrao recomendado: equilibra cota, custo e capacidade por kind e effortClass",
+    "costOrder": ["scout", "codex-reviewer", "planner-std", "codex-builder", "builder", "reviewer-antigravity", "antigravity-planner", "antigravity-builder", "expert"],
     "roles": [
       {
         "name": "scout",
@@ -489,6 +517,7 @@ Para cada etapa `(kind, effortClass)`:
   },
   "performance": {
     "description": "Prioriza maxima qualidade: Opus em deep, Neon XHigh em pesquisa/review e Sonnet High em codigo",
+    "costOrder": ["perf-codex-ro", "perf-codex-std", "perf-builder", "perf-research", "perf-reviewer", "perf-ag-hydrogen", "perf-expert"],
     "roles": [
       {
         "name": "perf-expert",
@@ -605,7 +634,7 @@ Para cada etapa `(kind, effortClass)`:
 
 ## Protocolo Operacional do Orquestrador
 
-### Passo 0: Coleta Dinâmica, Classificação e Roteamento Inicial
+### Passo 0: Coleta Dinâmica, Perfil da Tarefa e Roteamento Inicial
 
 1. Resolver o handle do próprio orquestrador antes de qualquer despacho:
    ```bash
@@ -613,8 +642,10 @@ Para cada etapa `(kind, effortClass)`:
    ```
    Se falhar, interromper e avisar o usuário (os agentes não teriam destino para o aviso de conclusão).
 2. Executar `bash <caminho-da-skill>/scripts/get-quotas.sh` para obter `INSTALLED_AGENTS` e `QUOTA`/`BUCKET`.
-3. Classificar o requisito em `effortClass` (`light | standard | deep`) e resolver Planner, Executor e Reviewer pelo preset ativo (`balanced` por padrão), filtrando contra `INSTALLED_AGENTS`.
-4. **Sem perguntar agente ou modelo ao usuário**, exibir resumo compacto da decisão e iniciar imediatamente o Passo 1.
+3. **Extrair o `TaskProfile`** do requisito (tabela "Perfil da Tarefa") e derivar o `effortClass` pelas regras 1–3 (ou `profileWeights` do preset). O perfil vai na trilha de auditoria.
+   - **Régua das 6 dimensões SWEBOK** (claro e não ambíguo, completo, consistente, verificável, rastreável, necessário e factível): se a issue do trabalho ainda não passou pela auditoria, delegar à skill `orca-superpowers-avaliacao` — mesma régua, um lugar só. Issue com lacuna = **não despachar o Planner**; a correção é apresentada e aprovada pelo usuário primeiro.
+4. Resolver Planner, Executor e Reviewer pelo preset ativo (`balanced` por padrão), filtrando contra `INSTALLED_AGENTS` e ordenando os candidatos que casaram por `costOrder`: **o inicial é sempre o mais barato compatível com o perfil**; caro só entra por escalação (passo 5) ou por regra/gate explícito.
+5. **Sem perguntar agente ou modelo ao usuário**, exibir resumo compacto do perfil (`decision/verification/risk/ambiguity/blast`) + `effortClass` + a alocação por etapa e iniciar imediatamente o Passo 1.
 
 ### Passo 1: Disparo do Planejamento (Planner)
 
@@ -638,12 +669,24 @@ REQUISITO DO USUÁRIO:
 DIRETRIZES:
 1. Explore a arquitetura e elabore a especificação técnica em docs/superpowers/specs/YYYY-MM-DD-<feature>-design.md.
 2. Escreva o plano de tarefas executável com TDD em docs/superpowers/plans/YYYY-MM-DD-<feature>.md com checkboxes '- [ ]' e testes explícitos por tarefa.
-3. Ao concluir e comitar os arquivos, avise o orquestrador (obrigatório, mesmo em falha):
-   orca terminal send --terminal <ORQ_HANDLE> --text "ETAPA planner CONCLUÍDA | status: <OK|FALHA> | resumo: <3 frases> | plano: docs/superpowers/plans/<nome>.md" --enter --json
-4. Só depois do envio, encerre.
+3. PROBE (veredito estruturado — avalie antes de avisar):
+   - [ ] spec cobre requisitos e restrições do REQUISITO sem lacuna de decisão aberta?
+   - [ ] cada tarefa do plano tem teste explícito e resultado verificável?
+   - [ ] arquivos de spec e plano existem e foram comitados?
+   Se todos marcados: probe=PASS. Se algum falhar: probe=FAIL e explique em uma linha qual.
+4. Ao concluir e comitar os arquivos, avise o orquestrador (obrigatório, mesmo em falha):
+   orca terminal send --terminal <ORQ_HANDLE> --text "ETAPA planner CONCLUÍDA | status: <OK|FALHA> | probe: <PASS|FAIL> | evidencia: <uma linha do PROBE> | resumo: <3 frases> | plano: docs/superpowers/plans/<nome>.md" --enter --json
+5. Só depois do envio, encerre.
 ```
 
 Aguardar `ETAPA planner CONCLUÍDA` no terminal do orquestrador (se passar de 10 minutos sem aviso, ler com `orca terminal read --terminal <handle_planner> --limit 50 --json` antes de decidir).
+
+#### Malha de escalação por probe (após qualquer etapa)
+
+1. Ler `probe:` e `evidencia:` da mensagem. O orquestrador **confronta a evidência** com o filesystem (arquivo de spec/plano existe e foi comitado? checklist `- [x]` completa? saída de teste citada?). Evidência que não resiste à checagem = `probe: FAIL`.
+2. `probe: PASS` → segue o fluxo normal.
+3. `probe: FAIL` → reexecutar `get-quotas.sh`, escolher o **próximo candidato em `costOrder`** compatível com a etapa (preservando `readOnly: true` no Reviewer), reabrir a TUI e reenviar o mesmo prompt **mais uma linha**: `A etapa anterior falhou no probe: <evidencia>. Corrija antes de reenviar o veredito.` Registrar `escalation:<de→para>` na trilha.
+4. Segundo `FAIL` na mesma etapa → **parar e avisar o usuário** com a trilha completa (nunca loop).
 
 ### Passo 2: Gate Obrigatório de Aprovação Humana (Única pergunta do fluxo normal)
 
@@ -670,12 +713,17 @@ REGRAS RÍGIDAS DE EXECUÇÃO:
 1. Execute cada tarefa do plano estritamente em TDD (escreva o teste, veja falhar, implemente o código, veja passar).
 2. Faça commit atômico por tarefa no formato: git commit -m "feat/fix: <resumo>".
 3. Atualize o arquivo do plano marcando cada checkbox concluída com '- [x]'.
-4. Ao concluir todas as tarefas e garantir que a suíte de testes passa, avise o orquestrador (obrigatório, mesmo em falha):
-   orca terminal send --terminal <ORQ_HANDLE> --text "ETAPA executor CONCLUÍDA | status: <OK|FALHA> | resumo: <3 frases> | plano: <caminho-do-plano>" --enter --json
-5. Só depois do envio, encerre.
+4. PROBE (veredito estruturado — avalie antes de avisar):
+   - [ ] suíte de testes do projeto rodou e passou (cite o comando e o resumo da saída)?
+   - [ ] todas as checkboxes do plano estão '- [x]'?
+   - [ ] há um commit atômico por tarefa concluída?
+   Se todos marcados: probe=PASS. Se algum falhar: probe=FAIL e explique em uma linha qual.
+5. Ao concluir, avise o orquestrador (obrigatório, mesmo em falha):
+   orca terminal send --terminal <ORQ_HANDLE> --text "ETAPA executor CONCLUÍDA | status: <OK|FALHA> | probe: <PASS|FAIL> | evidencia: <comando da suíte + resultado> | resumo: <3 frases> | plano: <caminho-do-plano>" --enter --json
+6. Só depois do envio, encerre.
 ```
 
-Aguardar `ETAPA executor CONCLUÍDA` e confirmar que todas as checkboxes do plano estão `[x]`.
+Aguardar `ETAPA executor CONCLUÍDA`, confirmar que todas as checkboxes do plano estão `[x]` e aplicar a malha de escalação por `probe` (seção "Malha de escalação por probe"). O confronto de evidência aqui é o mais duro: rodar o mesmo comando de suíte citado pelo Executor quando houver dúvida.
 
 ### Passo 4: Disparo da Auditoria (Reviewer)
 
@@ -691,35 +739,41 @@ Avalie o git diff da branch contra a spec em docs/superpowers/specs/ e o plano e
 REQUISITOS DA AUDITORIA:
 1. Execute a suíte de testes automatizados do projeto e colete a saída real.
 2. Inspecione qualidade de código, aderência à spec e possíveis regressões.
-3. Salve o relatório em docs/superpowers/reviews/YYYY-MM-DD-<feature>-review.md contendo obrigatoriamente a seção "## Trilha de Auditoria de Roteamento" com o bloco abaixo:
+3. PROBE (veredito estruturado — o aprovado só vale com prova executável):
+   - aprovado exige: suíte passando + aderência à spec + sem regressão identificada.
+   - qualquer item sem prova executável = reprovado; cite a evidência faltante.
+4. Salve o relatório em docs/superpowers/reviews/YYYY-MM-DD-<feature>-review.md contendo obrigatoriamente a seção "## Trilha de Auditoria de Roteamento" com o bloco abaixo:
 <BLOCO_TRILHA_AUDITORIA>
-4. Em qualquer veredito (aprovado ou reprovado), avise o orquestrador:
-   orca terminal send --terminal <ORQ_HANDLE> --text "ETAPA reviewer CONCLUÍDA | status: <OK|FALHA> | resumo: <3 frases> | plano: docs/superpowers/reviews/<arquivo>.md" --enter --json
-5. Só depois do envio, encerre.
+5. Em qualquer veredito (aprovado ou reprovado), avise o orquestrador:
+   orca terminal send --terminal <ORQ_HANDLE> --text "ETAPA reviewer CONCLUÍDA | status: <OK|FALHA> | probe: <PASS|FAIL> | evidencia: <saída da suíte + veredito> | resumo: <3 frases> | plano: docs/superpowers/reviews/<arquivo>.md" --enter --json
+6. Só depois do envio, encerre.
 ```
 
-Aguardar `ETAPA reviewer CONCLUÍDA`.
+Aguardar `ETAPA reviewer CONCLUÍDA` e aplicar a malha de escalação por `probe` (seção "Malha de escalação por probe"), respeitando `readOnly` e a independência de vendor ao subir de custo.
 
 ### Passo 5: Consolidação Final
 
 Após receber `ETAPA reviewer CONCLUÍDA`:
-- Apresentar veredito, saída real dos testes coletados pelo Reviewer, caminho do relatório e a **Trilha de Auditoria** completa.
+- Apresentar veredito, saída real dos testes coletados pelo Reviewer, caminho do relatório e a **Trilha de Auditoria** completa (incluindo `profile`, `probe` e `escalation` de cada etapa).
 - Se aprovado: sugerir `orca-superpowers-merge`. Se reprovado: sugerir `orca-superpowers-review-loop`.
 
 ---
 
 ## Trilha de Auditoria
 
-Toda decisão de roteamento (Passos 0, 3 e 4) e o relatório do Reviewer (`## Trilha de Auditoria de Roteamento`) devem registrar, **sem PII e sem tokens**:
+Toda decisão de roteamento (Passos 0, 3 e 4), cada malha de escalação e o relatório do Reviewer (`## Trilha de Auditoria de Roteamento`) devem registrar, **sem PII e sem tokens**:
 
 ```text
 preset: balanced | kind: <kind> | effortClass: <light|standard|deep> | source: <orca|direct-curl>
+profile: decision:<decidir|detalhar> verification:<automated|manual|none> risk:<alto|baixo> ambiguity:<aberta|fechada> blast:<1-2|localizado|transversal>
 installed: <lista de agent ids retornados por orca agent installed>
 quotas: claude(5h=5%, 7d=66%), codex(5h=0%, 7d=74%), antigravity(5h=12%, 7d=6%)
-planner  -> rule:<id> | role:<nome> | agent:<id> | model:<id|default> | fallback:<de→para ou nenhum>
-executor -> rule:<id> | role:<nome> | agent:<id> | model:<id|default> | fallback:<de→para ou nenhum>
-reviewer -> rule:<id> | role:<nome> | agent:<id> | model:<id|default> | fallback:<de→para ou nenhum> | vendor-independence:<ok|fallback>
+planner  -> rule:<id> | role:<nome> | agent:<id> | model:<id|default> | cost:<índice em costOrder> | probe:<PASS|FAIL> | escalation:<de→para ou nenhum>
+executor -> rule:<id> | role:<nome> | agent:<id> | model:<id|default> | cost:<índice em costOrder> | probe:<PASS|FAIL> | escalation:<de→para ou nenhum>
+reviewer -> rule:<id> | role:<nome> | agent:<id> | model:<id|default> | cost:<índice em costOrder> | probe:<PASS|FAIL> | escalation:<de→para ou nenhum> | vendor-independence:<ok|fallback>
 ```
+
+Cada linha `profile` + `probe` + `escalation` é a evidência de ciclos anteriores: ao classificar a próxima tarefa, o orquestrador relê as últimas trilhas do mesmo domínio e usa `probe: FAIL`/`escalation` registrados ali como sinal de que o papel mais barato daquele perfil não bastou — subindo o ponto de partida sem perguntar nada ao usuário.
 
 ---
 
@@ -749,6 +803,9 @@ orca terminal read --terminal <handle> --limit 50 --json
 ## Red Flags - Erros Críticos
 
 - **NUNCA pergunte ao usuário qual agente ou modelo usar:** o objetivo central da skill é a seleção automática baseada em `orca agent installed` e `orca account list`.
+- **NUNCA pule o perfil da tarefa:** sem o `TaskProfile` extraído no Passo 0, não há como justificar barato vs. caro — classifique primeiro, roteie depois.
+- **NUNCA aceite `probe: PASS` sem confrontar a evidência** (arquivo existe, checklist completa, saída de teste real); evidência que não resiste à checagem equivale a `FAIL`.
+- **NUNCA reexeute uma etapa mais de uma vez por `probe: FAIL`:** segundo FAIL consecutivo interrompe o ciclo e avisa o usuário com a trilha.
 - **NUNCA dispare o Executor sem aprovação humana do plano no Passo 2.**
 - **NUNCA passe `--effort` sem `--model`:** no `orca agent launch`, `--effort` exige `--model`; quando `"model": null`, omita ambos.
 - **NUNCA use modo não-interativo (`-p`, `--print`, `exec`, `run`):** se `tui-idle` falhar em duas tentativas, interrompa e avise o usuário.
