@@ -14,6 +14,7 @@ Opera no **mesmo worktree ativo** (`--worktree active`), com o mesmo contrato da
 - **TUI interativa OBRIGATÓRIA** em 100% dos despachos (`--focus` + `terminal wait --for tui-idle`), sem qualquer fallback para `-p`/`exec`/`run`.
 - **Aviso de conclusão é a única prova de fim de etapa**: `ETAPA <fixer|reviewer> CONCLUÍDA | status: <OK|FALHA> | ...` enviado ao handle do coordenador.
 - **O agente desta skill não codifica**: ele só abre terminais, injeta prompts, lê avisos e conta iterações.
+- **Ponytail nível `full` no turno do Fixer** (correção é execução de código): menor correção que resolve o item inteiro, nunca no turno do Reviewer. Instalação por agente, fallback e trava anti-atalho em "Ponytail no Planejamento e na Execução" do `orca-superpowers-orchestrator`.
 
 ```
         [AGENTE DA SKILL — coordenador, não codifica]
@@ -29,7 +30,7 @@ Opera no **mesmo worktree ativo** (`--worktree active`), com o mesmo contrato da
                         ▼                                    │
    ┌──────────────────────────────────────────────┐          │
    │ Turno F (Fixer): receiving-code-review +     │◀─────────┘
-   │ executing-plans, só sobre os itens apontados │
+   │ executing-plans+ponytail, itens apontados    │
    └──────────────────────────────────────────────┘
                         │ iteração < 3? ── SIM ──▶ volta ao Reviewer
                         │ NÃO ──▶ ESCALA AO USUÁRIO (status: FALHA)
@@ -94,7 +95,8 @@ orca terminal send --terminal <handle> --text "<TEMPLATE_FIXER>" --enter --json
 
 #### Template injetado no Fixer:
 ```text
-Use as skills superpowers:receiving-code-review e superpowers:executing-plans.
+Use as skills superpowers:receiving-code-review, superpowers:executing-plans e ponytail no nível full (/ponytail full).
+Se a skill ponytail não estiver instalada neste CLI, aplique o princípio na mão e diga isso no aviso final: menor correção que resolve o item inteiro.
 RELATÓRIO DE REVIEW: <caminho-do-relatorio>
 ITENS A CORRIGIR (iteração <N>):
 - <item 1 — problema, arquivo, severidade>
@@ -103,11 +105,13 @@ ITENS A CORRIGIR (iteração <N>):
 REGRAS RÍGIDAS:
 1. Corrija EXCLUSIVAMENTE os itens listados; não faça refatorações nem melhorias não pedidas.
 2. Cada item: escreva o teste que falha, corrija em TDD, veja passar.
-3. Commit atômico por item: git commit -m "fix: <resumo-do-item>".
-4. Se algum item estiver incorreto ou impossível, NÃO o pule: registre a discordância no aviso.
-5. Ao concluir, avise o orquestrador (obrigatório, mesmo em falha):
+3. Menor correção que resolve o item inteiro: antes de editar, faça grep de todos os chamadores da função que vai tocar e corrija a causa raiz uma vez no código compartilhado, em vez de remendar cada ponto de uso. Nada de abstração, wrapper ou flag que o item não pediu.
+4. A correção mínima nunca corta validação, tratamento de erro, segurança, acessibilidade nem o teste do item — isso é correção inacabada, não preguiça.
+5. Commit atômico por item: git commit -m "fix: <resumo-do-item>".
+6. Se algum item estiver incorreto ou impossível, NÃO o pule: registre a discordância no aviso.
+7. Ao concluir, avise o orquestrador (obrigatório, mesmo em falha):
    orca terminal send --terminal <ORQ_HANDLE> --text "ETAPA fixer CONCLUÍDA | status: <OK|FALHA> | resumo: <3 frases> | item: <itens corrigidos ou discordancia>" --enter --json
-6. Só depois do envio, encerre a execução.
+8. Só depois do envio, encerre a execução.
 ```
 
 Aguarde `ETAPA fixer CONCLUÍDA` no seu terminal. Sem aviso em 10 minutos → `orca terminal read --terminal <handle> --limit 50 --json` antes de qualquer conclusão. Ausência de aviso nunca conta como conclusão.
@@ -179,5 +183,6 @@ orca worktree current --json
 - **NUNCA rode a suíte de testes nem o diff no coordenador** — ele apenas despacha e lê.
 - **NUNCA ultrapasse 3 iterações** nem reinicie a contagem para "dar mais uma chance".
 - **NUNCA deixe o Fixer tocar em código fora dos itens apontados** (refatoração extra invalida o escopo do review).
+- **NUNCA aceite o ponytail como desculpa para entregar item sem teste, sem validação ou com a causa raiz intacta:** correção menor e inacabada volta reprovada e queima uma das 3 iterações.
 - **NUNCA avance sem o aviso enviado ao `<ORQ_HANDLE>` real** resolvido no Passo 0.
 - **TUI é OBRIGATÓRIA em 100% dos turnos**: `--focus` + `tui-idle` antes do `send`; duas falhas de `satisfied: false` → interrompa e avise o usuário. **NUNCA** use `-p`/`exec`/`run`.
